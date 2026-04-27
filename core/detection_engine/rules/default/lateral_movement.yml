@@ -1,0 +1,19 @@
+title: Lateral Movement via PsExec or WMI
+id: lateral_movement_psexec
+description: Detects use of PsExec, PSEXESVC, or WMI for remote execution — strong lateral movement indicators.
+status: experimental
+logsource:
+    category: process_creation
+    product: windows
+detection:
+    selection:
+        process_name|contains:
+            - psexec
+            - PSEXESVC
+            - wmiprvse
+        category: process_creation
+    condition: selection
+level: critical
+tags:
+    - attack.lateral_movement
+    - attack.t1570

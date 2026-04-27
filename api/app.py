@@ -78,16 +78,22 @@ def _register_routers(app: FastAPI) -> None:
     from api.routers.health import router as health_router
     from api.routers.sessions import router as sessions_router
     from api.routers.scenarios import router as scenarios_router
+    from api.routers.detection import router as detection_router
+    from api.routers.alerts import router as alerts_router
 
     app.include_router(health_router, tags=["Health"])
     app.include_router(sessions_router, prefix="/sessions", tags=["Sessions"])
     app.include_router(scenarios_router, prefix="/scenarios", tags=["Scenarios"])
+    app.include_router(detection_router, prefix="/detection", tags=["Detection Rules"])
+    app.include_router(alerts_router, prefix="/alerts", tags=["Alerts"])
 
-    # Future routers (uncomment as you build them):
-    # from api.routers.attacks import router as attacks_router
-    # from api.routers.detection import router as detection_router
-    # from api.routers.alerts import router as alerts_router
+    # Block 2 (your friend's attack router)
+    try:
+        from api.routers.attacks import router as attacks_router
+        app.include_router(attacks_router, prefix="/attacks", tags=["Attacks"])
+    except ImportError:
+        pass
+
+    # Future routers (uncomment when built):
     # from api.routers.logs import router as logs_router
     # from api.routers.reports import router as reports_router
-    # from api.routers.scoring import router as scoring_router
-    # from api.routers.mitre import router as mitre_router
