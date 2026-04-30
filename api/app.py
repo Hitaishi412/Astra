@@ -38,6 +38,11 @@ async def lifespan(app: FastAPI):
     yield
 
     # Cleanup
+    # Cleanup
+    from streaming.backend import close_backend
+    from streaming.manager import get_ws_manager
+    await get_ws_manager().shutdown()
+    await close_backend()
     await close_db()
 
 
@@ -75,17 +80,35 @@ def create_app() -> FastAPI:
 # ---------------------------------------------------------------------------
 def _register_routers(app: FastAPI) -> None:
     """Mount all API routers."""
+    # Block 1
     from api.routers.health import router as health_router
     from api.routers.sessions import router as sessions_router
     from api.routers.scenarios import router as scenarios_router
+
+    # Block 4 (Detection Engine)
     from api.routers.detection import router as detection_router
     from api.routers.alerts import router as alerts_router
+
+    # Block 6 (Streaming + Logs/Scoring/MITRE)
+    from api.routers.logs import router as logs_router
+    from api.routers.scoring import router as scoring_router
+    from api.routers.mitre import router as mitre_router
 
     app.include_router(health_router, tags=["Health"])
     app.include_router(sessions_router, prefix="/sessions", tags=["Sessions"])
     app.include_router(scenarios_router, prefix="/scenarios", tags=["Scenarios"])
     app.include_router(detection_router, prefix="/detection", tags=["Detection Rules"])
     app.include_router(alerts_router, prefix="/alerts", tags=["Alerts"])
+    app.include_router(logs_router, prefix="/logs", tags=["Logs"])
+    app.include_router(scoring_router, prefix="/scoring", tags=["Scoring"])
+    app.include_router(mitre_router, prefix="/mitre", tags=["MITRE ATT&CK"])
+
+    # Block 2 (attacks router — optional, only if your friend added it)
+    try:
+        from api.routers.attacks import router as attacks_router
+        app.include_router(attacks_router, prefix="/attacks", tags=["Attacks"])
+    except ImportError:
+        pass
 
     # Block 2 (your friend's attack router)
     try:
