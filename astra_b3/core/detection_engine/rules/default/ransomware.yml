@@ -1,0 +1,21 @@
+title: Ransomware File Encryption Pattern
+id: ransomware_encryption
+description: Detects rapid file modifications with ransomware-style extensions (.encrypted, .locked, .crypt) — strong ransomware indicator.
+status: experimental
+logsource:
+    category: file_event
+detection:
+    selection:
+        file_path|contains:
+            - .encrypted
+            - .locked
+            - .crypted
+            - .ransomware
+            - .ryuk
+            - .lockbit
+    condition: selection | count(hostname) > 10
+    timeframe: 2m
+level: critical
+tags:
+    - attack.impact
+    - attack.t1486

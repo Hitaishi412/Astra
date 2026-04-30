@@ -1,0 +1,22 @@
+title: Suspicious PowerShell Execution
+id: suspicious_powershell
+description: Detects PowerShell invocations with encoded commands, hidden windows, or execution policy bypass — common malware behaviors.
+status: experimental
+logsource:
+    category: process_creation
+    product: windows
+detection:
+    selection:
+        process_name|contains: powershell
+        command_line|contains:
+            - '-enc'
+            - '-EncodedCommand'
+            - 'WindowStyle Hidden'
+            - 'bypass'
+            - 'DownloadString'
+            - 'IEX'
+    condition: selection
+level: high
+tags:
+    - attack.execution
+    - attack.t1059.001
