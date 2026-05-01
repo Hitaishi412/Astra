@@ -1,0 +1,5 @@
+
+# Runtime DB
+astra.db
+__pycache__/
+*.pyc

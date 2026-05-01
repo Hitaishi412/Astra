@@ -1,0 +1,764 @@
+# data/log_templates/windows_attack.yml
+#
+# Log templates for every Windows-sourced MITRE technique implemented in Block 2.
+# Each entry defines:
+#   technique_id : MITRE ID this template handles
+#   logs         : list of log blueprints the generator expands into LogEntry objects
+#
+# Template variables (resolved by generator.py at render time):
+#   {source_host}   - attacker / pivot host
+#   {target_host}   - victim host
+#   {username}      - account used
+#   {source_ip}     - source IP address
+#   {target_ip}     - destination IP address
+#   {command_line}  - command executed
+#   {process_name}  - process name
+#   {parent_process}- parent process name
+#   {service}       - service / protocol name
+#   {task_name}     - scheduled task name
+#   {registry_key}  - registry key path
+#   {file_path}     - file path
+#   {port}          - network port
+#   {payload}       - payload name / description
+#   {hash}          - NTLM hash (truncated)
+#   {ticket_type}   - Kerberos ticket type
+#   {bytes}         - data size in bytes
+#   {c2_domain}     - C2 / exfil domain
+#   {family}        - ransomware family name
+#   {ext}           - ransomware file extension
+#   {count}         - numeric count
+#   {package}       - software package name
+#   {cve}           - CVE identifier
+
+# ─── T1595.001 Active Scanning ────────────────────────────────────────────────
+- technique_id: "T1595.001"
+  logs:
+    - source: windows_event
+      event_id: 5156
+      category: network
+      severity: info
+      message: "The Windows Filtering Platform permitted a connection. Application: System. Direction: Inbound. Source IP: {source_ip}. Destination Port: {port}."
+      fields:
+        source_ip: "{source_ip}"
+        destination_port: "{port}"
+        process_name: "System"
+        raw_data:
+          direction: Inbound
+          protocol: TCP
+          filter_id: 68288
+
+    - source: windows_event
+      event_id: 5157
+      category: network
+      severity: info
+      message: "The Windows Filtering Platform blocked a connection. Application: System. Direction: Inbound. Source IP: {source_ip}. Destination Port: {port}."
+      fields:
+        source_ip: "{source_ip}"
+        destination_port: "{port}"
+        process_name: "System"
+        raw_data:
+          direction: Inbound
+          protocol: TCP
+
+# ─── T1595.002 Vulnerability Scanning ────────────────────────────────────────
+- technique_id: "T1595.002"
+  logs:
+    - source: windows_event
+      event_id: 5156
+      category: network
+      severity: info
+      message: "Repeated inbound connection attempts from {source_ip} targeting port {port}. Possible vulnerability scan detected."
+      fields:
+        source_ip: "{source_ip}"
+        destination_port: "{port}"
+        process_name: "System"
+        raw_data:
+          scan_type: vulnerability
+
+# ─── T1566.001 Spearphishing Attachment ──────────────────────────────────────
+- technique_id: "T1566.001"
+  logs:
+    - source: windows_event
+      event_id: 4688
+      category: process_creation
+      severity: medium
+      message: "A new process was created. Creator: {username}. New Process: WINWORD.EXE. Command: WINWORD.EXE /n {payload}"
+      fields:
+        hostname: "{target_host}"
+        username: "{username}"
+        process_name: "WINWORD.EXE"
+        parent_process: "explorer.exe"
+        command_line: "WINWORD.EXE /n {payload}"
+        raw_data:
+          new_process_id: 4928
+          token_elevation_type: "TokenElevationTypeDefault (1)"
+
+    - source: windows_event
+      event_id: 4688
+      category: process_creation
+      severity: high
+      message: "Macro spawned child process. Creator: WINWORD.EXE. New Process: cmd.exe. Command: cmd.exe /c powershell -enc {payload}"
+      fields:
+        hostname: "{target_host}"
+        username: "{username}"
+        process_name: "cmd.exe"
+        parent_process: "WINWORD.EXE"
+        command_line: "cmd.exe /c powershell -enc {payload}"
+        raw_data:
+          subject_user: "{username}"
+          token_elevation_type: "TokenElevationTypeFull (3)"
+
+    - source: endpoint_edr
+      event_id: 1
+      category: process_creation
+      severity: high
+      message: "Sysmon: Office macro spawned shell. Image: cmd.exe. ParentImage: WINWORD.EXE. User: {username}@{target_host}."
+      fields:
+        hostname: "{target_host}"
+        username: "{username}"
+        process_name: "cmd.exe"
+        parent_process: "WINWORD.EXE"
+        command_line: "cmd.exe /c powershell -enc {payload}"
+        raw_data:
+          RuleName: "TechniqueID=T1566.001,TechniqueName=Phishing"
+          EventType: ProcessCreate
+
+# ─── T1190 Exploit Public-Facing Application ──────────────────────────────────
+- technique_id: "T1190"
+  logs:
+    - source: windows_event
+      event_id: 4688
+      category: process_creation
+      severity: critical
+      message: "Unusual child process spawned from web service. Process: cmd.exe. Parent: w3wp.exe. Command: cmd.exe /c whoami."
+      fields:
+        hostname: "{target_host}"
+        username: "NETWORK SERVICE"
+        process_name: "cmd.exe"
+        parent_process: "w3wp.exe"
+        command_line: "cmd.exe /c whoami"
+        raw_data:
+          cve: "{cve}"
+          exploit_type: "RCE"
+
+    - source: endpoint_edr
+      event_id: 3
+      category: network
+      severity: critical
+      message: "Sysmon: Network connection initiated by w3wp.exe to external host {target_ip}:{port}. Possible reverse shell."
+      fields:
+        hostname: "{target_host}"
+        source_ip: "{source_ip}"
+        destination_ip: "{target_ip}"
+        destination_port: "{port}"
+        process_name: "w3wp.exe"
+        raw_data:
+          EventType: NetworkConnect
+          Initiated: true
+
+# ─── T1078 Valid Accounts ──────────────────────────────────────────────────────
+- technique_id: "T1078"
+  logs:
+    - source: windows_event
+      event_id: 4624
+      category: authentication
+      severity: medium
+      message: "An account was successfully logged on. Subject: SYSTEM. Account: {username}. Logon Type: 10. Source IP: {source_ip}."
+      fields:
+        hostname: "{target_host}"
+        username: "{username}"
+        source_ip: "{source_ip}"
+        raw_data:
+          LogonType: 10
+          AuthPackage: "Negotiate"
+          WorkstationName: "{source_host}"
+          ImpersonationLevel: "Impersonation"
+
+    - source: windows_event
+      event_id: 4648
+      category: authentication
+      severity: medium
+      message: "Logon attempted using explicit credentials. Subject: {username}. Target Account: {username}. Target Server: {target_host}. Source IP: {source_ip}."
+      fields:
+        hostname: "{source_host}"
+        username: "{username}"
+        source_ip: "{source_ip}"
+        destination_ip: "{target_ip}"
+        raw_data:
+          TargetServer: "{target_host}"
+          subject_user: "{username}"
+
+# ─── T1195.002 Software Supply Chain ─────────────────────────────────────────
+- technique_id: "T1195.002"
+  logs:
+    - source: windows_event
+      event_id: 4688
+      category: process_creation
+      severity: critical
+      message: "Package manager executed post-install script. Process: node.exe. Parent: npm.cmd. Command: node postinstall.js"
+      fields:
+        hostname: "{target_host}"
+        username: "{username}"
+        process_name: "node.exe"
+        parent_process: "npm.cmd"
+        command_line: "node postinstall.js"
+        raw_data:
+          package: "{package}"
+          trigger: "postinstall"
+
+    - source: endpoint_edr
+      event_id: 3
+      category: network
+      severity: critical
+      message: "Sysmon: Outbound connection from package postinstall script to {target_ip}:{port}."
+      fields:
+        hostname: "{target_host}"
+        destination_ip: "{target_ip}"
+        destination_port: "{port}"
+        process_name: "node.exe"
+        raw_data:
+          EventType: NetworkConnect
+          package: "{package}"
+
+# ─── T1059.001 PowerShell ─────────────────────────────────────────────────────
+- technique_id: "T1059.001"
+  logs:
+    - source: windows_event
+      event_id: 4104
+      category: powershell
+      severity: high
+      message: "PowerShell script block logging: ScriptBlock: {command_line}"
+      fields:
+        hostname: "{target_host}"
+        username: "{username}"
+        process_name: "powershell.exe"
+        command_line: "{command_line}"
+        raw_data:
+          ScriptBlockId: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+          Path: ""
+
+    - source: windows_event
+      event_id: 4688
+      category: process_creation
+      severity: high
+      message: "New process: powershell.exe spawned by {parent_process}. Command: {command_line}"
+      fields:
+        hostname: "{target_host}"
+        username: "{username}"
+        process_name: "powershell.exe"
+        parent_process: "{parent_process}"
+        command_line: "{command_line}"
+        raw_data:
+          MandatoryLabel: "S-1-16-12288"
+
+    - source: endpoint_edr
+      event_id: 1
+      category: process_creation
+      severity: high
+      message: "Sysmon: PowerShell launched with suspicious args. Image: powershell.exe. CommandLine: {command_line}"
+      fields:
+        hostname: "{target_host}"
+        username: "{username}"
+        process_name: "powershell.exe"
+        command_line: "{command_line}"
+        raw_data:
+          RuleName: "TechniqueID=T1059.001"
+          Hashes: "SHA256=A3F..."
+
+# ─── T1059.003 CMD ────────────────────────────────────────────────────────────
+- technique_id: "T1059.003"
+  logs:
+    - source: windows_event
+      event_id: 4688
+      category: process_creation
+      severity: medium
+      message: "New process: cmd.exe. Parent: {parent_process}. Command: {command_line}. User: {username}."
+      fields:
+        hostname: "{target_host}"
+        username: "{username}"
+        process_name: "cmd.exe"
+        parent_process: "{parent_process}"
+        command_line: "{command_line}"
+        raw_data:
+          TokenElevationType: "Full"
+
+# ─── T1047 WMI ────────────────────────────────────────────────────────────────
+- technique_id: "T1047"
+  logs:
+    - source: windows_event
+      event_id: 4688
+      category: process_creation
+      severity: high
+      message: "WMI child process created. Parent: WmiPrvSE.exe. New Process: cmd.exe. User: {username}. Host: {target_host}."
+      fields:
+        hostname: "{target_host}"
+        username: "{username}"
+        process_name: "cmd.exe"
+        parent_process: "WmiPrvSE.exe"
+        command_line: "cmd.exe /c whoami > C:\\Temp\\out.txt"
+        raw_data:
+          WMINamespace: "root\\cimv2"
+          WMIMethod: "Win32_Process.Create"
+
+    - source: endpoint_edr
+      event_id: 1
+      category: process_creation
+      severity: high
+      message: "Sysmon: WmiPrvSE.exe spawned cmd.exe on {target_host}. Lateral movement indicator."
+      fields:
+        hostname: "{target_host}"
+        username: "{username}"
+        process_name: "cmd.exe"
+        parent_process: "WmiPrvSE.exe"
+        raw_data:
+          RuleName: "TechniqueID=T1047"
+
+# ─── T1547.001 Registry Run Key ───────────────────────────────────────────────
+- technique_id: "T1547.001"
+  logs:
+    - source: windows_event
+      event_id: 4657
+      category: registry_event
+      severity: medium
+      message: "A registry value was modified. Key: {registry_key}. Value: {payload}. User: {username}."
+      fields:
+        hostname: "{target_host}"
+        username: "{username}"
+        command_line: "reg add {registry_key} /v WindowsUpdate /d {payload} /f"
+        raw_data:
+          OperationType: "Existing registry value modified"
+          ObjectValueName: "WindowsUpdate"
+          NewValue: "{payload}"
+          OldValue: ""
+
+    - source: endpoint_edr
+      event_id: 13
+      category: registry_event
+      severity: medium
+      message: "Sysmon: Registry value set. TargetObject: {registry_key}. Details: {payload}."
+      fields:
+        hostname: "{target_host}"
+        username: "{username}"
+        command_line: "{registry_key} → {payload}"
+        raw_data:
+          EventType: SetValue
+          RuleName: "TechniqueID=T1547.001"
+
+# ─── T1053.005 Scheduled Task ─────────────────────────────────────────────────
+- technique_id: "T1053.005"
+  logs:
+    - source: windows_event
+      event_id: 4698
+      category: scheduled_task
+      severity: high
+      message: "A scheduled task was created. Task: {task_name}. User: {username}. Command: powershell.exe -WindowStyle Hidden -File C:\\Temp\\{task_name}.ps1"
+      fields:
+        hostname: "{target_host}"
+        username: "{username}"
+        process_name: "schtasks.exe"
+        command_line: "schtasks /create /tn {task_name} /sc onstart /ru SYSTEM /tr \"powershell.exe -WindowStyle Hidden\""
+        raw_data:
+          TaskName: "{task_name}"
+          TaskContent: "<Task><Triggers><BootTrigger/></Triggers></Task>"
+
+# ─── T1136.001 Create Local Account ──────────────────────────────────────────
+- technique_id: "T1136.001"
+  logs:
+    - source: windows_event
+      event_id: 4720
+      category: account_management
+      severity: critical
+      message: "A user account was created. New Account: {username}. Creator: {username}. Host: {target_host}."
+      fields:
+        hostname: "{target_host}"
+        username: "{username}"
+        raw_data:
+          SubjectUserName: "{username}"
+          TargetUserName: "{username}"
+          DisplayName: "Support Account"
+          UserPrincipalName: ""
+
+    - source: windows_event
+      event_id: 4732
+      category: account_management
+      severity: critical
+      message: "A member was added to a security-enabled local group. Group: Administrators. Member: {username}."
+      fields:
+        hostname: "{target_host}"
+        username: "{username}"
+        raw_data:
+          MemberName: "{username}"
+          GroupName: "Administrators"
+
+# ─── T1134.001 Token Impersonation ───────────────────────────────────────────
+- technique_id: "T1134.001"
+  logs:
+    - source: windows_event
+      event_id: 4624
+      category: authentication
+      severity: high
+      message: "Token impersonation: Account {username} logged on with elevated token. Logon Type: 3. Source: {source_ip}."
+      fields:
+        hostname: "{target_host}"
+        username: "SYSTEM"
+        source_ip: "{source_ip}"
+        raw_data:
+          LogonType: 3
+          ImpersonationLevel: "Impersonation"
+          ElevatedToken: "Yes"
+
+    - source: endpoint_edr
+      event_id: 10
+      category: process_creation
+      severity: high
+      message: "Sysmon: Process accessed LSASS. SourceImage: {process_name}. TargetImage: lsass.exe. GrantedAccess: 0x1010."
+      fields:
+        hostname: "{target_host}"
+        username: "{username}"
+        process_name: "{process_name}"
+        raw_data:
+          EventType: ProcessAccess
+          TargetImage: "C:\\Windows\\System32\\lsass.exe"
+          GrantedAccess: "0x1010"
+          RuleName: "TechniqueID=T1134.001"
+
+# ─── T1021.001 RDP ────────────────────────────────────────────────────────────
+- technique_id: "T1021.001"
+  logs:
+    - source: windows_event
+      event_id: 4624
+      category: authentication
+      severity: high
+      message: "RDP logon successful. Account: {username}. Source: {source_ip}. Logon Type: 10 (RemoteInteractive)."
+      fields:
+        hostname: "{target_host}"
+        username: "{username}"
+        source_ip: "{source_ip}"
+        raw_data:
+          LogonType: 10
+          AuthPackage: "Negotiate"
+          WorkstationName: "{source_host}"
+
+    - source: windows_event
+      event_id: 4648
+      category: authentication
+      severity: high
+      message: "Explicit credential RDP logon. Subject: {username}. Target: {target_host}. Source IP: {source_ip}."
+      fields:
+        hostname: "{source_host}"
+        username: "{username}"
+        source_ip: "{source_ip}"
+        destination_ip: "{target_ip}"
+        raw_data:
+          TargetServer: "{target_host}"
+          TargetPort: 3389
+
+# ─── T1021.002 SMB Admin Shares ───────────────────────────────────────────────
+- technique_id: "T1021.002"
+  logs:
+    - source: windows_event
+      event_id: 5140
+      category: network
+      severity: high
+      message: "A network share object was accessed. Share: \\\\{target_host}\\ADMIN$. Account: {username}. Source: {source_ip}."
+      fields:
+        hostname: "{target_host}"
+        username: "{username}"
+        source_ip: "{source_ip}"
+        raw_data:
+          ShareName: "ADMIN$"
+          SharePath: "C:\\Windows"
+          AccessMask: "0x1"
+
+    - source: windows_event
+      event_id: 5145
+      category: network
+      severity: high
+      message: "A network share object was checked. Share: ADMIN$. Account: {username}. Source IP: {source_ip}. Access: ReadData."
+      fields:
+        hostname: "{target_host}"
+        username: "{username}"
+        source_ip: "{source_ip}"
+        raw_data:
+          ShareName: "ADMIN$"
+          RelativeTargetName: ""
+          AccessMask: "0x120089"
+
+# ─── T1550.002 Pass the Hash ──────────────────────────────────────────────────
+- technique_id: "T1550.002"
+  logs:
+    - source: windows_event
+      event_id: 4624
+      category: authentication
+      severity: critical
+      message: "NTLM pass-the-hash detected. Account: {username}. Logon Type: 3 (Network). Auth: NTLM. Source: {source_ip}. Workstation: {source_host}."
+      fields:
+        hostname: "{target_host}"
+        username: "{username}"
+        source_ip: "{source_ip}"
+        raw_data:
+          LogonType: 3
+          AuthPackage: "NTLM"
+          WorkstationName: "{source_host}"
+          KeyLength: 0
+
+    - source: windows_event
+      event_id: 4776
+      category: authentication
+      severity: critical
+      message: "Credential validation: NTLM authentication for {username} from {source_host}. Status: 0x0."
+      fields:
+        hostname: "{target_host}"
+        username: "{username}"
+        source_ip: "{source_ip}"
+        raw_data:
+          PackageName: "MICROSOFT_AUTHENTICATION_PACKAGE_V1_0"
+          WorkstationName: "{source_host}"
+          Status: "0x0"
+
+# ─── T1550.003 Pass the Ticket ────────────────────────────────────────────────
+- technique_id: "T1550.003"
+  logs:
+    - source: windows_event
+      event_id: 4768
+      category: kerberos
+      severity: critical
+      message: "Kerberos TGT requested for {username}. Client: {source_host}. Ticket type: {ticket_type}."
+      fields:
+        hostname: "{target_host}"
+        username: "{username}"
+        source_ip: "{source_ip}"
+        raw_data:
+          ServiceName: "krbtgt"
+          TicketEncryptionType: "0x17"
+          TicketOptions: "0x40810010"
+          Status: "0x0"
+
+    - source: windows_event
+      event_id: 4769
+      category: kerberos
+      severity: critical
+      message: "Kerberos service ticket requested. Account: {username}. Service: {service}. Encryption: RC4. Source: {source_ip}."
+      fields:
+        hostname: "{target_host}"
+        username: "{username}"
+        source_ip: "{source_ip}"
+        raw_data:
+          ServiceName: "{service}"
+          TicketEncryptionType: "0x17"
+          FailureCode: "0x0"
+
+# ─── T1071.004 DNS Tunneling ──────────────────────────────────────────────────
+- technique_id: "T1071.004"
+  logs:
+    - source: network_flow
+      event_id: null
+      category: network
+      severity: high
+      message: "Abnormally large DNS query from {source_ip} to {c2_domain}. Query length: {bytes} bytes. TXT record abuse suspected."
+      fields:
+        source_ip: "{source_ip}"
+        destination_ip: "{target_ip}"
+        destination_port: 53
+        raw_data:
+          protocol: UDP
+          query_domain: "{c2_domain}"
+          query_type: TXT
+          query_length: "{bytes}"
+          bytes_total: "{bytes}"
+
+    - source: windows_event
+      event_id: 5156
+      category: network
+      severity: high
+      message: "High-frequency DNS queries from {source_host} to {c2_domain}. Possible DNS tunneling."
+      fields:
+        hostname: "{source_host}"
+        source_ip: "{source_ip}"
+        destination_ip: "{target_ip}"
+        destination_port: 53
+        raw_data:
+          protocol: UDP
+          domain: "{c2_domain}"
+
+# ─── T1041 C2 Channel Exfiltration ───────────────────────────────────────────
+- technique_id: "T1041"
+  logs:
+    - source: network_flow
+      event_id: null
+      category: network
+      severity: critical
+      message: "Large outbound transfer detected. Source: {source_ip}. Destination: {target_ip}:{port}. Bytes sent: {bytes}."
+      fields:
+        source_ip: "{source_ip}"
+        destination_ip: "{target_ip}"
+        destination_port: "{port}"
+        raw_data:
+          protocol: TCP
+          bytes_out: "{bytes}"
+          bytes_in: 1024
+          duration_sec: 38
+          action: ALLOW
+
+    - source: endpoint_edr
+      event_id: 3
+      category: network
+      severity: critical
+      message: "Sysmon: Large data transfer. Image: {process_name}. Destination: {target_ip}:{port}. Bytes: {bytes}."
+      fields:
+        hostname: "{source_host}"
+        destination_ip: "{target_ip}"
+        destination_port: "{port}"
+        process_name: "{process_name}"
+        raw_data:
+          EventType: NetworkConnect
+          Initiated: true
+          DestinationPort: "{port}"
+
+# ─── T1567.002 Cloud Exfiltration ─────────────────────────────────────────────
+- technique_id: "T1567.002"
+  logs:
+    - source: network_flow
+      event_id: null
+      category: network
+      severity: high
+      message: "Outbound HTTPS upload to cloud storage provider. Host: {source_host}. Destination: {target_ip}. Bytes: {bytes}."
+      fields:
+        source_ip: "{source_ip}"
+        destination_ip: "{target_ip}"
+        destination_port: 443
+        raw_data:
+          protocol: TCP
+          bytes_out: "{bytes}"
+          service: "HTTPS"
+          action: ALLOW
+
+# ─── T1070.001 Log Clearing ───────────────────────────────────────────────────
+- technique_id: "T1070.001"
+  logs:
+    - source: windows_event
+      event_id: 1102
+      category: audit
+      severity: critical
+      message: "The audit log was cleared. Subject: {username}. Host: {target_host}."
+      fields:
+        hostname: "{target_host}"
+        username: "{username}"
+        raw_data:
+          SubjectUserName: "{username}"
+          SubjectLogonId: "0x3e7"
+
+    - source: windows_event
+      event_id: 104
+      category: audit
+      severity: critical
+      message: "The System event log was cleared. User: {username}."
+      fields:
+        hostname: "{target_host}"
+        username: "{username}"
+        raw_data:
+          Channel: "System"
+
+# ─── T1027 Obfuscated Files ───────────────────────────────────────────────────
+- technique_id: "T1027"
+  logs:
+    - source: windows_event
+      event_id: 4104
+      category: powershell
+      severity: high
+      message: "PowerShell script block with high entropy / obfuscation detected. Script: {command_line}"
+      fields:
+        hostname: "{target_host}"
+        username: "{username}"
+        process_name: "powershell.exe"
+        command_line: "{command_line}"
+        raw_data:
+          MessageNumber: 1
+          MessageTotal: 1
+          ScriptBlockText: "{command_line}"
+
+# ─── T1070.006 Timestomping ───────────────────────────────────────────────────
+- technique_id: "T1070.006"
+  logs:
+    - source: endpoint_edr
+      event_id: 2
+      category: file_event
+      severity: medium
+      message: "Sysmon: File creation time changed. TargetFilename: {file_path}. CreationUtcTime changed."
+      fields:
+        hostname: "{target_host}"
+        username: "{username}"
+        file_path: "{file_path}"
+        raw_data:
+          EventType: FileCreateTime
+          TargetFilename: "{file_path}"
+          CreationUtcTime: "2019-06-15 08:00:00.000"
+          PreviousCreationUtcTime: "2024-11-01 14:23:11.000"
+          RuleName: "TechniqueID=T1070.006"
+
+# ─── T1486 Ransomware Encryption ──────────────────────────────────────────────
+- technique_id: "T1486"
+  logs:
+    - source: endpoint_edr
+      event_id: 11
+      category: file_event
+      severity: critical
+      message: "Sysmon: Mass file creation with suspicious extension. TargetFilename: {file_path}{ext}. Image: {process_name}."
+      fields:
+        hostname: "{target_host}"
+        username: "{username}"
+        process_name: "{process_name}"
+        file_path: "{file_path}{ext}"
+        raw_data:
+          EventType: FileCreate
+          TargetFilename: "{file_path}{ext}"
+          RuleName: "TechniqueID=T1486,TechniqueName=Data Encrypted for Impact"
+          Image: "{process_name}"
+
+    - source: windows_event
+      event_id: 4663
+      category: file_system
+      severity: critical
+      message: "File encryption activity. Object: {file_path}. Process: {process_name}. Access: WriteData. Volume of operations: high."
+      fields:
+        hostname: "{target_host}"
+        username: "{username}"
+        process_name: "{process_name}"
+        file_path: "{file_path}"
+        raw_data:
+          ObjectType: File
+          AccessMask: "0x2"
+          ProcessName: "{process_name}"
+
+# ─── T1485 Data Destruction ───────────────────────────────────────────────────
+- technique_id: "T1485"
+  logs:
+    - source: windows_event
+      event_id: 4688
+      category: process_creation
+      severity: critical
+      message: "Destructive command executed. Process: {process_name}. Command: {command_line}. User: {username}."
+      fields:
+        hostname: "{target_host}"
+        username: "{username}"
+        process_name: "{process_name}"
+        command_line: "{command_line}"
+        raw_data:
+          TokenElevationType: "Full"
+
+# ─── T1548.003 Sudo Abuse (Linux) ─────────────────────────────────────────────
+- technique_id: "T1548.003"
+  logs:
+    - source: linux_syslog
+      event_id: null
+      category: authentication
+      severity: high
+      message: "sudo: {username} : TTY=pts/0 ; PWD=/home/{username} ; USER=root ; COMMAND=/bin/bash"
+      fields:
+        hostname: "{target_host}"
+        username: "{username}"
+        process_name: "sudo"
+        raw_data:
+          facility: auth
+          tag: sudo
+          pid: 14821
