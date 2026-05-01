@@ -1,0 +1,20 @@
+title: Exfiltration to Cloud Storage
+id: exfil_to_cloud
+description: Network connections to common cloud storage services (Dropbox, MEGA, transfer.sh, anonfiles) — possible data exfiltration.
+status: experimental
+logsource:
+    category: network
+detection:
+    selection:
+        message|contains:
+            - 'dropbox.com'
+            - 'mega.nz'
+            - 'mega.io'
+            - 'transfer.sh'
+            - 'anonfiles.com'
+            - 'send.tresorit.com'
+    condition: selection
+level: high
+tags:
+    - attack.exfiltration
+    - attack.t1567.002

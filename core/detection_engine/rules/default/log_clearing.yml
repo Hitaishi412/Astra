@@ -1,0 +1,17 @@
+title: Windows Security Event Log Cleared
+id: log_clearing
+description: Detects clearing of the Windows Security event log (Event ID 1102) — strong indicator of an attacker covering their tracks.
+status: experimental
+logsource:
+    category: audit
+    product: windows
+detection:
+    selection:
+        event_id:
+            - 1102
+            - 104
+    condition: selection
+level: critical
+tags:
+    - attack.defense_evasion
+    - attack.t1070.001

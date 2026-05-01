@@ -16,4 +16,4 @@ detection:
 level: critical
 tags:
     - attack.lateral_movement
-    - attack.t1570
+    - attack.t1021.001

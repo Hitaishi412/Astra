@@ -1,0 +1,21 @@
+title: Suspicious Email Attachment Execution
+id: phishing_attachment
+description: Detects execution of common attachment file types (.docm, .xlsm, .lnk, .iso) often used in phishing attacks.
+status: experimental
+logsource:
+    category: process_creation
+    product: windows
+detection:
+    selection:
+        command_line|contains:
+            - '.docm'
+            - '.xlsm'
+            - '.lnk'
+            - '.iso'
+            - 'WINWORD'
+            - 'EXCEL'
+    condition: selection
+level: high
+tags:
+    - attack.initial_access
+    - attack.t1566.001

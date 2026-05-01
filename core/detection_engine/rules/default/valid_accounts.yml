@@ -1,0 +1,18 @@
+title: Anomalous Successful Login
+id: valid_accounts
+description: Successful logins from unusual sources or accounts. Real implementations would use behavioural baselines; here we match on Windows Event 4624 with explicit creds (logon type 9) which is suspicious.
+status: experimental
+logsource:
+    category: authentication
+    product: windows
+detection:
+    selection:
+        event_id: 4624
+        raw_data|contains:
+            - 'logon_type=9'
+            - 'logon_type=10'
+    condition: selection
+level: medium
+tags:
+    - attack.defense_evasion
+    - attack.t1078

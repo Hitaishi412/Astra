@@ -12,8 +12,9 @@ detection:
             - 6666
             - 8443
             - 50050
-    condition: selection
+    condition: selection | count(source_ip) > 3
+    timeframe: 5m
 level: high
 tags:
     - attack.command_and_control
-    - attack.t1071
+    - attack.t1071.001

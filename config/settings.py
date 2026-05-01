@@ -75,12 +75,13 @@ class Settings(BaseSettings):
     noise_ratio: float = 0.6
     max_session_duration_minutes: int = 60
 
-    # Scoring weights
-    weight_detection_rate: float = 0.30
-    weight_mttd: float = 0.25
-    weight_fp_rate: float = 0.15
-    weight_containment: float = 0.15
+    # Scoring weights — must sum to 1.0
+    weight_detection_rate: float = 0.25
+    weight_mttd: float = 0.20
+    weight_fp_rate: float = 0.10
+    weight_containment: float = 0.10
     weight_report_quality: float = 0.15
+    weight_coverage: float = 0.20
 
     # MITRE
     mitre_attack_version: str = "15.1"

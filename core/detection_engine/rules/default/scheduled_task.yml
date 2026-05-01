@@ -1,0 +1,19 @@
+title: Scheduled Task Creation
+id: scheduled_task
+description: Creation of new Windows scheduled tasks (Event 4698) — common persistence and execution technique.
+status: experimental
+logsource:
+    category: audit
+    product: windows
+detection:
+    selection:
+        event_id: 4698
+    second_selection:
+        process_name|contains:
+            - 'schtasks.exe'
+            - 'TaskScheduler'
+    condition: selection or second_selection
+level: medium
+tags:
+    - attack.persistence
+    - attack.t1053.005

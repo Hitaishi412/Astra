@@ -1,0 +1,18 @@
+title: Network Reconnaissance / Port Scanning
+id: recon_scanning
+description: Detects high-volume short-duration connection attempts to many destination ports — classic port-scan pattern.
+status: experimental
+logsource:
+    category: network
+detection:
+    selection:
+        message|contains:
+            - 'port_scan'
+            - 'nmap'
+            - 'masscan'
+            - 'rustscan'
+    condition: selection
+level: medium
+tags:
+    - attack.reconnaissance
+    - attack.t1595.001

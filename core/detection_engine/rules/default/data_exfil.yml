@@ -11,4 +11,4 @@ detection:
 level: high
 tags:
     - attack.exfiltration
-    - attack.t1048
+    - attack.t1041

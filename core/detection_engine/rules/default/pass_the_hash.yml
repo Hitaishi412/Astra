@@ -1,0 +1,18 @@
+title: NTLM Pass-the-Hash Indicator
+id: pass_the_hash
+description: NTLM authentication with anomalous patterns (workstation logons using local accounts, no Kerberos) often indicates pass-the-hash attacks.
+status: experimental
+logsource:
+    category: authentication
+    product: windows
+detection:
+    selection:
+        event_id: 4624
+        raw_data|contains:
+            - 'authentication_package=NTLM'
+            - 'logon_process=NtLmSsp'
+    condition: selection
+level: high
+tags:
+    - attack.lateral_movement
+    - attack.t1550.002

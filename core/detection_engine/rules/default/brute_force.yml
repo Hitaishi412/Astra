@@ -15,4 +15,4 @@ detection:
 level: high
 tags:
     - attack.credential_access
-    - attack.t1110
+    - attack.t1110.001

@@ -1,0 +1,19 @@
+title: Obfuscated Files or Information
+id: obfuscated_files
+description: Detects obfuscated commands and files — base64, hex, repeated escapes — often used to hide malicious payloads.
+status: experimental
+logsource:
+    category: process_creation
+detection:
+    selection:
+        command_line|contains:
+            - 'FromBase64String'
+            - 'Convert.FromBase64'
+            - 'XOR'
+            - '[char]'
+            - 'Invoke-Obfuscation'
+    condition: selection
+level: medium
+tags:
+    - attack.defense_evasion
+    - attack.t1027
