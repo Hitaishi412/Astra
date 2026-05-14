@@ -22,7 +22,7 @@ from collections import deque
 from typing import Any, Optional
 
 import httpx
-from dash import Input, Output, State, html, no_update
+from dash import ALL, Input, Output, State, ctx as dash_ctx, dcc, html, no_update
 
 from dashboard.components.renderers import (
     render_alert_card,
@@ -287,6 +287,7 @@ def register(app):
             "current_phase": phase_idx,
             "completed_phases": completed_idx,
             "score_full": score,
+            "session_state": (attack_status.get("state") or "").lower(),
         }
         return logs, alerts, stats
 
@@ -419,6 +420,125 @@ def register(app):
         _mode_obj = next((m for m in MODES if m["id"] == (mode or "soc")), MODES[0])
         return None, True, _launcher_form(_mode_obj)
 
+    # ── Alert click → open detail/triage panel ──────────────────────────
+    # Pattern-matching listens for clicks on any rendered alert card.
+
+    @app.callback(
+        Output("selected-alert-id", "data"),
+        Output("triage-panel-body", "children"),
+        Output("triage-panel-meta", "children"),
+        Input({"type": "alert-card", "id": ALL}, "n_clicks"),
+        State("live-alerts-store", "data"),
+        prevent_initial_call=True,
+    )
+    def open_triage_panel(_clicks, alerts):
+        # Filter out the case where ALL clicks are 0 (initial render, layout change)
+        if not _clicks or not any(c for c in _clicks if c):
+            return no_update, no_update, no_update
+        if not dash_ctx.triggered_id:
+            return no_update, no_update, no_update
+        clicked_id = dash_ctx.triggered_id.get("id")
+        if not clicked_id or not alerts:
+            return no_update, no_update, no_update
+
+        alert = next(
+            (a for a in alerts if str(a.get("id") or a.get("alert_id") or "") == str(clicked_id)),
+            None,
+        )
+        if alert is None:
+            return no_update, no_update, no_update
+
+        return clicked_id, _render_triage_body(alert), f"#{clicked_id[:8]}"
+
+    # ── Triage submit ──────────────────────────────────────────────────
+    @app.callback(
+        Output("triage-feedback", "data"),
+        Input("triage-tp-button", "n_clicks"),
+        Input("triage-fp-button", "n_clicks"),
+        Input("triage-escalate-button", "n_clicks"),
+        State("selected-alert-id", "data"),
+        State("triage-notes-input", "value"),
+        State("api-base", "data"),
+        prevent_initial_call=True,
+    )
+    def submit_triage(_tp, _fp, _esc, alert_id, notes, api_base):
+        if not alert_id or not dash_ctx.triggered_id:
+            return no_update
+        clicked = dash_ctx.triggered_id
+        decision = {
+            "triage-tp-button":       ("true_positive",  True),
+            "triage-fp-button":       ("false_positive", False),
+            "triage-escalate-button": ("escalated",      None),
+        }.get(clicked)
+        if decision is None:
+            return no_update
+        triage_status, is_tp = decision
+
+        body = {
+            "triage_status":   triage_status,
+            "analyst_notes":   notes or None,
+        }
+        if is_tp is not None:
+            body["is_true_positive"] = is_tp
+
+        try:
+            with httpx.Client(timeout=4.0) as client:
+                resp = client.patch(f"{api_base}/alerts/{alert_id}/triage", json=body)
+            if resp.status_code in (200, 201):
+                return f"✓ Triaged as {triage_status.replace('_', ' ')}"
+            return f"⚠ Triage failed ({resp.status_code})"
+        except Exception as e:
+            return f"⚠ Triage failed: {e}"
+
+    # ── Display the triage feedback into the panel ─────────────────────
+    @app.callback(
+        Output("triage-feedback-text", "children"),
+        Input("triage-feedback", "data"),
+        prevent_initial_call=True,
+    )
+    def show_triage_feedback(msg):
+        return msg or ""
+
+    # ── End & Write Report → navigate to report writer ───────────────────
+    @app.callback(
+        Output("url", "pathname", allow_duplicate=True),
+        Input("end-and-report-button", "n_clicks"),
+        State("active-session", "data"),
+        State("api-base", "data"),
+        prevent_initial_call=True,
+    )
+    def end_and_write_report(n_clicks, session_id, api_base):
+        if not n_clicks or not session_id:
+            return no_update
+        # Stop the running session — best-effort
+        try:
+            with httpx.Client(timeout=3.0) as client:
+                client.post(f"{api_base}/attacks/abort", json={"session_id": session_id})
+        except Exception:
+            pass
+        return f"/report/{session_id}"
+
+    # ── Auto-redirect when session reaches "completed" ───────────────────
+    # The driver publishes attack_status with state="completed" when the
+    # finaliser finishes. We watch the stats store; once the score is
+    # finalised (preview=False, or we see state in the buffer), redirect.
+    @app.callback(
+        Output("url", "pathname", allow_duplicate=True),
+        Input("live-stats-store", "data"),
+        State("active-session", "data"),
+        State("url", "pathname"),
+        prevent_initial_call=True,
+    )
+    def auto_redirect_on_complete(stats, session_id, current_path):
+        if not session_id or not stats:
+            return no_update
+        # If we're already off the live page, don't fight the user
+        if current_path and not current_path.startswith("/live"):
+            return no_update
+        if (stats.get("session_state") or "").lower() == "completed":
+            return f"/report/{session_id}"
+        return no_update
+
 
 # ════════════════════════════════════════════════════════════════════════════
 # HELPERS
@@ -443,6 +563,11 @@ def _build_live_grid(session_id: str, scenario: str, difficulty: str):
 
     return html.Div(
         [
+            # Stores for triage panel state
+            dcc.Store(id="selected-alert-id", data=None),
+            dcc.Store(id="triage-feedback", data=""),
+            # Location is the global one — used for redirect to report writer.
+            # We avoid creating a new dcc.Location here; the app already has one.
             html.Div(
                 [
                     html.Span(
@@ -453,11 +578,23 @@ def _build_live_grid(session_id: str, scenario: str, difficulty: str):
                             "fontSize": "13px",
                         },
                     ),
-                    html.Button(
-                        "■ Abort Session",
-                        id="abort-button",
-                        className="btn-astra btn-danger-astra",
-                        n_clicks=0,
+                    html.Div(
+                        [
+                            html.Button(
+                                "■ Abort Session",
+                                id="abort-button",
+                                className="btn-astra btn-danger-astra",
+                                n_clicks=0,
+                                style={"marginRight": "8px"},
+                            ),
+                            html.Button(
+                                "✎ End & Write Report",
+                                id="end-and-report-button",
+                                className="btn-astra btn-primary-astra",
+                                n_clicks=0,
+                            ),
+                        ],
+                        style={"display": "flex"},
                     ),
                 ],
                 style={
@@ -467,14 +604,205 @@ def _build_live_grid(session_id: str, scenario: str, difficulty: str):
                     "marginBottom": "16px",
                 },
             ),
+            # Three-column grid: logs | alerts | triage panel
             html.Div(
                 [
                     _log_stream_card(),
                     _alerts_card(),
+                    _triage_panel(),
                 ],
-                className="live-grid",
+                className="live-grid live-grid-with-panel",
+                style={
+                    "display": "grid",
+                    "gridTemplateColumns": "minmax(0, 1.4fr) minmax(0, 1fr) minmax(280px, 0.9fr)",
+                    "gap": "16px",
+                },
             ),
             html.Div(style={"height": "20px"}),
             _score_panel(),
+        ],
+    )
+
+
+def _triage_panel() -> html.Div:
+    """Right-side detail/triage panel. Hidden until an alert is clicked."""
+    return html.Div(
+        [
+            html.Div(
+                [
+                    html.H3("Alert Detail", className="astra-card-title"),
+                    html.Span(id="triage-panel-meta", className="astra-card-meta"),
+                ],
+                className="astra-card-header",
+            ),
+            html.Div(
+                id="triage-panel-body",
+                children=html.Div(
+                    [
+                        html.Div("◇", className="empty-state-icon"),
+                        "Click an alert to investigate",
+                    ],
+                    className="empty-state",
+                    style={"padding": "32px 16px"},
+                ),
+                style={
+                    "padding": "12px 14px",
+                    "minHeight": "300px",
+                    "fontSize": "13px",
+                },
+            ),
+        ],
+        className="astra-card",
+        id="triage-panel",
+    )
+
+
+def _render_triage_body(alert: dict) -> html.Div:
+    """Render the body of the triage panel for the selected alert."""
+    severity = (alert.get("severity") or "medium").lower()
+    technique = alert.get("technique_id", "")
+    description = alert.get("description") or alert.get("message") or "No description provided."
+    rule_name = alert.get("rule_name") or alert.get("rule_id", "—")
+    hostname = alert.get("hostname", "—")
+    src_ip = alert.get("source_ip", "—")
+    dst_ip = alert.get("destination_ip", "—")
+    username = alert.get("username", "—")
+    ts = alert.get("timestamp", "")
+    triage = (alert.get("triage_status") or "new").lower()
+
+    def _row(label: str, value: str) -> html.Div:
+        return html.Div(
+            [
+                html.Span(label, style={
+                    "color": "var(--text-secondary)",
+                    "fontSize": "11px",
+                    "textTransform": "uppercase",
+                    "letterSpacing": "0.04em",
+                    "minWidth": "80px",
+                    "display": "inline-block",
+                }),
+                html.Span(str(value), style={
+                    "fontFamily": "var(--font-mono)",
+                    "fontSize": "12px",
+                    "color": "var(--text-primary)",
+                }),
+            ],
+            style={"marginBottom": "6px"},
+        )
+
+    triage_buttons = html.Div(
+        [
+            html.Button(
+                "✓ True Positive",
+                id="triage-tp-button",
+                className="btn-astra btn-primary-astra",
+                n_clicks=0,
+                style={"flex": "1", "fontSize": "12px"},
+            ),
+            html.Button(
+                "✗ False Positive",
+                id="triage-fp-button",
+                className="btn-astra btn-secondary-astra",
+                n_clicks=0,
+                style={"flex": "1", "fontSize": "12px"},
+            ),
+            html.Button(
+                "↑ Escalate",
+                id="triage-escalate-button",
+                className="btn-astra btn-danger-astra",
+                n_clicks=0,
+                style={"flex": "1", "fontSize": "12px"},
+            ),
+        ],
+        style={"display": "flex", "gap": "6px", "marginTop": "12px"},
+    )
+
+    notes_field = dcc.Textarea(
+        id="triage-notes-input",
+        value=alert.get("analyst_notes") or "",
+        placeholder="Analyst notes (optional)…",
+        style={
+            "width": "100%",
+            "minHeight": "80px",
+            "marginTop": "12px",
+            "fontFamily": "var(--font-mono)",
+            "fontSize": "12px",
+            "padding": "8px",
+            "background": "var(--bg-input, #0a0a0a)",
+            "color": "var(--text-primary)",
+            "border": "1px solid var(--border-subtle, #2a2a2a)",
+            "borderRadius": "4px",
+        },
+    )
+
+    feedback = html.Div(
+        id="triage-feedback-text",
+        style={
+            "marginTop": "8px",
+            "fontSize": "11px",
+            "color": "var(--status-good)",
+            "minHeight": "16px",
+        },
+    )
+
+    return html.Div(
+        [
+            # Title block
+            html.Div(
+                [
+                    html.Span(severity.upper(), className=f"alert-severity-badge {severity}"),
+                    html.Span(
+                        triage.replace("_", " ").upper(),
+                        style={
+                            "marginLeft": "8px",
+                            "fontSize": "10px",
+                            "padding": "2px 8px",
+                            "border": "1px solid var(--border-subtle, #2a2a2a)",
+                            "borderRadius": "3px",
+                            "color": "var(--text-secondary)",
+                        },
+                    ) if triage and triage != "new" else None,
+                ],
+                style={"marginBottom": "8px"},
+            ),
+            html.H4(
+                alert.get("title", "Untitled alert"),
+                style={"margin": "0 0 8px 0", "fontSize": "14px"},
+            ),
+            html.Div(
+                description,
+                style={
+                    "fontSize": "12px",
+                    "color": "var(--text-secondary)",
+                    "marginBottom": "12px",
+                    "lineHeight": "1.5",
+                },
+            ),
+            # Metadata block
+            html.Hr(style={"border": "0", "borderTop": "1px solid var(--border-subtle, #2a2a2a)"}),
+            html.Div(
+                [
+                    _row("Rule",      rule_name),
+                    _row("Technique", technique or "—"),
+                    _row("Host",      hostname),
+                    _row("User",      username),
+                    _row("Source",    src_ip),
+                    _row("Dest",      dst_ip),
+                    _row("Time",      ts),
+                ],
+                style={"marginTop": "10px"},
+            ),
+            html.Hr(style={"border": "0", "borderTop": "1px solid var(--border-subtle, #2a2a2a)"}),
+            # Triage controls
+            html.Div("Triage decision", style={
+                "fontSize": "11px",
+                "textTransform": "uppercase",
+                "color": "var(--text-secondary)",
+                "letterSpacing": "0.04em",
+                "marginTop": "12px",
+            }),
+            triage_buttons,
+            notes_field,
+            feedback,
         ],
     )

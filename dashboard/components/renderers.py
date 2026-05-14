@@ -49,7 +49,12 @@ def render_log_row(log: dict[str, Any]) -> html.Div:
 # ALERTS — card renderer
 # ════════════════════════════════════════════════════════════════════════════
 def render_alert_card(alert: dict[str, Any]) -> html.Div:
-    """Render an alert as a card in the right sidebar."""
+    """Render an alert as a clickable card in the right sidebar.
+
+    The card has a pattern-matching id so a single Dash callback can
+    handle clicks on any alert. The alert id is embedded in the
+    pattern; the full payload is read from `live-alerts-store` on click.
+    """
     severity = (alert.get("severity") or "medium").lower()
 
     ts = alert.get("timestamp", "")
@@ -67,12 +72,31 @@ def render_alert_card(alert: dict[str, Any]) -> html.Div:
         html.Span(technique, className="alert-mitre-tag") if technique else None
     )
 
+    triage = (alert.get("triage_status") or "new").lower()
+    triage_badge = None
+    if triage and triage != "new":
+        badge_label = {
+            "investigating":   "INVESTIGATING",
+            "true_positive":   "✓ TP",
+            "false_positive":  "✗ FP",
+            "escalated":       "↑ ESCALATED",
+            "resolved":        "RESOLVED",
+        }.get(triage, triage.upper())
+        triage_badge = html.Span(
+            badge_label,
+            className=f"alert-triage-badge triage-{triage}",
+            style={"marginLeft": "auto", "fontSize": "10px", "opacity": "0.85"},
+        )
+
+    alert_id = alert.get("id") or alert.get("alert_id") or ""
+
     return html.Div(
         [
             html.Div(
                 [
                     html.Span(severity.upper(), className=f"alert-severity-badge {severity}"),
                     html.Span(time_str, className="alert-time"),
+                    *([triage_badge] if triage_badge else []),
                 ],
                 className="alert-card-header",
             ),
@@ -86,7 +110,10 @@ def render_alert_card(alert: dict[str, Any]) -> html.Div:
                 className="alert-meta",
             ),
         ],
-        className=f"alert-card severity-{severity}",
+        id={"type": "alert-card", "id": str(alert_id)},
+        n_clicks=0,
+        className=f"alert-card severity-{severity} clickable",
+        style={"cursor": "pointer"},
     )
 
 
