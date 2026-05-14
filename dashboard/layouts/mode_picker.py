@@ -58,72 +58,92 @@ MODES = [
         ),
         "skills": ["Attack-side planning", "Detection auditing", "Cross-team translation", "Gap analysis"],
         "metrics": ["Combined attack/defense score", "Self-detection rate", "Coverage gaps identified"],
+        "coming_soon": True,
     },
 ]
 
 
 def _mode_card(mode: dict) -> html.Div:
-    """Render a single large mode-selection card."""
-    return dcc.Link(
-        html.Div(
+    """Render a single large mode-selection card.
+
+    Coming-soon modes render as a non-clickable div with a badge in
+    place of the CTA. Active modes render as a dcc.Link wrapping the card.
+    """
+    is_coming_soon = mode.get("coming_soon", False)
+
+    # Footer: either a "Coming Soon" pill or the active CTA
+    if is_coming_soon:
+        footer = html.Div(
+            [html.Span("Coming Soon", className="mode-cta-badge")],
+            className="mode-card-cta mode-card-cta-disabled",
+        )
+    else:
+        footer = html.Div(
             [
-                # Icon + accent bar
-                html.Div(
-                    [
-                        html.Span(mode["icon"], className="mode-icon"),
-                        html.Span(mode["tagline"].upper(), className="mode-tagline"),
-                    ],
-                    className="mode-card-header",
-                ),
-
-                # Title
-                html.H3(mode["label"], className="mode-card-title"),
-
-                # Description
-                html.P(mode["description"], className="mode-card-desc"),
-
-                # Skills you'll practice
-                html.Div(
-                    [
-                        html.Div("Skills", className="mode-card-section-label"),
-                        html.Div(
-                            [
-                                html.Span(s, className="mode-skill-pill")
-                                for s in mode["skills"]
-                            ],
-                            className="mode-card-pills",
-                        ),
-                    ],
-                    className="mode-card-section",
-                ),
-
-                # Scored on
-                html.Div(
-                    [
-                        html.Div("Scored on", className="mode-card-section-label"),
-                        html.Ul(
-                            [html.Li(m, className="mode-metric-item") for m in mode["metrics"]],
-                            className="mode-metric-list",
-                        ),
-                    ],
-                    className="mode-card-section",
-                ),
-
-                # CTA arrow
-                html.Div(
-                    [
-                        html.Span("Begin Training"),
-                        html.Span("→", className="mode-cta-arrow"),
-                    ],
-                    className="mode-card-cta",
-                ),
+                html.Span("Begin Training"),
+                html.Span("→", className="mode-cta-arrow"),
             ],
-            className=f"mode-card mode-card-{mode['color']}",
-            id={"type": "mode-card", "mode": mode["id"]},
+            className="mode-card-cta",
+        )
+
+    card_inner = html.Div(
+        [
+            # Icon + tagline (with a corner ribbon for coming-soon)
+            html.Div(
+                [
+                    html.Span(mode["icon"], className="mode-icon"),
+                    html.Span(mode["tagline"].upper(), className="mode-tagline"),
+                    html.Span("Coming Soon", className="mode-card-ribbon") if is_coming_soon else None,
+                ],
+                className="mode-card-header",
+            ),
+
+            # Title
+            html.H3(mode["label"], className="mode-card-title"),
+
+            # Description
+            html.P(mode["description"], className="mode-card-desc"),
+
+            # Skills you'll practice
+            html.Div(
+                [
+                    html.Div("Skills", className="mode-card-section-label"),
+                    html.Div(
+                        [
+                            html.Span(s, className="mode-skill-pill")
+                            for s in mode["skills"]
+                        ],
+                        className="mode-card-pills",
+                    ),
+                ],
+                className="mode-card-section",
+            ),
+
+            # Scored on
+            html.Div(
+                [
+                    html.Div("Scored on", className="mode-card-section-label"),
+                    html.Ul(
+                        [html.Li(m, className="mode-metric-item") for m in mode["metrics"]],
+                        className="mode-metric-list",
+                    ),
+                ],
+                className="mode-card-section",
+            ),
+
+            footer,
+        ],
+        className=(
+            f"mode-card mode-card-{mode['color']}"
+            + (" mode-card-disabled" if is_coming_soon else "")
         ),
-        href=f"/launch/{mode['id']}",
-        className="mode-card-link",
+        id={"type": "mode-card", "mode": mode["id"]},
     )
+
+    # Coming-soon: bare div, no navigation. Active: link wrapper.
+    if is_coming_soon:
+        return html.Div(card_inner, className="mode-card-link mode-card-link-disabled")
+    return dcc.Link(card_inner, href=f"/launch/{mode['id']}", className="mode-card-link")
 
 
 def layout():

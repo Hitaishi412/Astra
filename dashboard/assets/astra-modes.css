@@ -409,3 +409,74 @@
     border: 1px solid var(--border-hair);
     border-radius: var(--radius-sm);
 }
+
+/* ============================================================================
+   COMING SOON — disabled mode cards
+   ============================================================================
+   Card stays visible and information-rich (the user should still see what
+   the mode WILL be), but it's clearly not clickable. Three signals layer:
+   ribbon in the header corner, "Coming Soon" pill replacing the CTA, and
+   a slight desaturation/dim on the whole card.
+*/
+
+.mode-card-link-disabled {
+    cursor: default;
+    text-decoration: none;
+}
+
+.mode-card-link-disabled:hover .mode-card-disabled,
+.mode-card-disabled {
+    /* Don't lift on hover for disabled cards */
+    transform: none !important;
+    box-shadow: none !important;
+}
+
+.mode-card-disabled {
+    opacity: 0.62;
+    filter: saturate(0.65);
+    transition: opacity 200ms, filter 200ms;
+    position: relative;
+}
+
+.mode-card-disabled:hover {
+    /* Subtle hint that it's noticed, without claiming interactivity */
+    opacity: 0.78;
+    filter: saturate(0.78);
+}
+
+/* Corner ribbon in the card header */
+.mode-card-ribbon {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    padding: 3px 9px;
+    font-family: var(--font-mono);
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+    background: var(--bg-card);
+    border: 1px solid var(--border-hair);
+    border-radius: 2px;
+}
+
+/* Disabled CTA footer — replaces the "Begin Training →" row */
+.mode-card-cta-disabled {
+    justify-content: center;
+    color: var(--text-tertiary);
+    cursor: default;
+}
+
+.mode-cta-badge {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+    padding: 8px 18px;
+    border: 1px dashed var(--border-default);
+    border-radius: var(--radius-sm);
+    background: transparent;
+}
