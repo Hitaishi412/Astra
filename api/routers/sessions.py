@@ -12,29 +12,53 @@ from api.schemas.session import SessionCreate, SessionResponse, SessionStatusUpd
 from api.schemas.scenario import SCENARIO_REGISTRY
 from db import crud
 
+# Pentester scenarios live in a separate registry — import lazily and
+# tolerate ImportError so this router still works if Pentester mode
+# isn't installed.
+def _pentester_scenario_ids() -> set[str]:
+    try:
+        from core.pentester import list_scenarios as pentester_list
+        return {s["scenario_id"] for s in pentester_list()}
+    except Exception:
+        return set()
+
+
 router = APIRouter()
 
 
 @router.post("", response_model=SessionResponse, status_code=201)
 async def create_session(body: SessionCreate, db: AsyncSession = Depends(get_db)):
-    """Start a new training session."""
+    """Start a new training session.
 
-    # Validate scenario exists
-    if body.scenario_id not in SCENARIO_REGISTRY:
+    Accepts scenario_ids from both the SOC registry (api.schemas.scenario)
+    and the Pentester registry (core.pentester). Pentester scenarios
+    skip difficulty-range validation because each pentester scenario IS
+    a specific difficulty (silver_pixel=easy, op_greenfield=medium,
+    nexus_infiltration=hard).
+    """
+
+    pentester_ids = _pentester_scenario_ids()
+    is_pentester = body.scenario_id in pentester_ids
+
+    # Validate scenario exists in either registry
+    if body.scenario_id not in SCENARIO_REGISTRY and not is_pentester:
+        all_known = list(SCENARIO_REGISTRY.keys()) + sorted(pentester_ids)
         raise HTTPException(
             status_code=400,
             detail=f"Unknown scenario '{body.scenario_id}'. "
-                   f"Available: {list(SCENARIO_REGISTRY.keys())}",
+                   f"Available: {all_known}",
         )
 
-    # Validate difficulty is supported by this scenario
-    scenario = SCENARIO_REGISTRY[body.scenario_id]
-    if body.difficulty not in scenario["difficulty_range"]:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Scenario '{body.scenario_id}' supports difficulties: "
-                   f"{scenario['difficulty_range']}",
-        )
+    # Validate difficulty (only for SOC scenarios; pentester scenarios are
+    # difficulty-fixed by their scenario_id)
+    if not is_pentester:
+        scenario = SCENARIO_REGISTRY[body.scenario_id]
+        if body.difficulty not in scenario["difficulty_range"]:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Scenario '{body.scenario_id}' supports difficulties: "
+                       f"{scenario['difficulty_range']}",
+            )
 
     # Get or create user
     user = await crud.get_or_create_user(db, body.username)

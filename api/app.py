@@ -113,3 +113,11 @@ def _register_routers(app: FastAPI) -> None:
         app.include_router(attacks_router, prefix="/attacks", tags=["Attacks"])
     except ImportError:
         pass
+
+    # Pentester decision-tree mode
+    try:
+        from api.routers.pentester import router as pentester_router
+        app.include_router(pentester_router, prefix="/pentester", tags=["Pentester"])
+    except Exception as e:
+        import logging
+        logging.getLogger("astra.api").exception(f"Pentester router not mounted: {e}")
