@@ -73,7 +73,7 @@ class SpearphishingAttachment(BaseTechnique):
 class SpearphishingLink(BaseTechnique):
     """T1566.002 — Credential harvesting via fake login page."""
 
-    TECHNIQUE_ID   = "T1566.001"
+    TECHNIQUE_ID   = "T1566.002"
     TECHNIQUE_NAME = "Phishing: Spearphishing Link"
     TACTIC         = "initial_access"
     PHASE          = KillChainPhase.DELIVERY

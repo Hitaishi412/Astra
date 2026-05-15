@@ -14,8 +14,8 @@ Usage:
     backend = get_backend()
     await backend.publish("astra:abc:logs", "{json...}")
 
-    async for message in backend.subscribe("astra:abc:logs"):
-        process(message)
+    async for channel, message in backend.subscribe("astra:abc:logs"):
+        process(channel, message)
 """
 
 from __future__ import annotations
@@ -24,7 +24,6 @@ import asyncio
 import logging
 from abc import ABC, abstractmethod
 from collections import defaultdict
-from contextlib import asynccontextmanager
 from typing import AsyncGenerator, Optional
 
 from config.settings import get_settings
@@ -79,6 +78,10 @@ class InMemoryBackend(StreamingBackend):
     Pure-Python pub/sub using asyncio.Queue.
     Works only within a single process — fine for tests and dev.
     Each subscribe() call gets its own queue.
+
+    The subscriber's queue receives (channel, message) tuples so consumers
+    can correctly distinguish which channel each message came from when
+    subscribed to multiple channels at once.
     """
 
     def __init__(self):
@@ -96,7 +99,7 @@ class InMemoryBackend(StreamingBackend):
         queues = self._subs.get(channel, [])
         for q in queues:
             try:
-                q.put_nowait(message)
+                q.put_nowait((channel, message))
             except asyncio.QueueFull:
                 logger.warning(f"[memory] Queue full on {channel}; dropping message")
         return len(queues)
@@ -111,11 +114,8 @@ class InMemoryBackend(StreamingBackend):
 
         try:
             while not self._closed:
-                msg = await q.get()
-                # We don't track origin per-message in memory backend, so we
-                # use the first channel as a placeholder. In practice, callers
-                # usually subscribe to one channel at a time.
-                yield channels[0], msg
+                channel, msg = await q.get()
+                yield channel, msg
         finally:
             for ch in channels:
                 if q in self._subs[ch]:

@@ -5,34 +5,24 @@ Session performance scoring engine.
 
 Takes raw session metrics (attack events, alerts, coverage data, dwell times)
 and produces a structured ScoreResult with:
-  - Five weighted sub-scores (detection rate, MTTD, FP rate, containment, report quality)
+  - Six weighted sub-scores (detection rate, MTTD, FP rate, containment, report quality, coverage)
   - A composite total_score (0–100)
   - A letter grade (excellent / good / average / needs_improvement / poor)
   - A MITRE coverage percentage
   - A full breakdown dict for the debrief view
 
 Score formula (weights from config/settings.py):
-  total = (detection_rate    × 0.30)
-        + (mttd_score        × 0.25)   ← inverted: shorter MTTD = higher score
-        + (fp_score          × 0.15)   ← inverted: fewer FPs = higher score
-        + (containment_score × 0.15)
-        + (report_quality    × 0.15)
+  total = (
+    detection_rate    * w_det
+  + mttd_score        * w_mttd        ← inverted: shorter MTTD = higher score
+  + fp_score          * w_fp          ← inverted: fewer FPs = higher score
+  + containment_score * w_contain
+  + report_quality    * w_report
+  + coverage_score    * w_coverage
+  ) / sum_of_weights
 
-All sub-scores are normalised to [0, 100] before weighting.
-
-Public interface
-────────────────
-    from core.scoring.calculator import SessionScorer, ScoreResult
-
-    scorer = SessionScorer(session_id="abc-123")
-    result = scorer.compute(
-        attack_events = [...],       # list[AttackEvent] from DB
-        alerts        = [...],       # list[Alert] from DB
-        coverage      = mapper.coverage_summary(),
-        report_quality_score = 82.0, # from Block 6 report grader (0-100, optional)
-        session_duration_sec = 1800,
-    )
-    # result.total_score, result.grade, result.to_db_dict()
+We normalise by the sum-of-weights so the total is always in [0, 100]
+even if weights don't perfectly sum to 1 in config.
 """
 
 from __future__ import annotations
@@ -56,8 +46,8 @@ class ScoreResult:
     """
     session_id: str
 
-    # ── Sub-scores (each 0–100) ───────────────────────────────────────────────
-    detection_rate:           float = 0.0   # % of malicious techniques detected
+    # ── Sub-scores ────────────────────────────────────────────────────────────
+    detection_rate:           float = 0.0   # 0.0–1.0 fraction of malicious techniques detected
     mean_time_to_detect_sec:  float = 0.0   # raw MTTD in seconds
     false_positive_rate:      float = 0.0   # FP alerts / total alerts (0–1)
     containment_score:        float = 0.0   # 0–100
@@ -145,10 +135,13 @@ _MAX_PHASE_PENALTY = max(_PHASE_PENALTY.values())
 def _containment_score(deepest_undetected_phase: Optional[str]) -> float:
     """
     Returns 0–100 based on how deep the attacker got undetected.
+    Returns 0 for unknown phases (treat as worst case).
     """
     if deepest_undetected_phase is None:
         return 100.0   # Everything detected
-    penalty = _PHASE_PENALTY.get(deepest_undetected_phase, _MAX_PHASE_PENALTY)
+    if deepest_undetected_phase not in _PHASE_PENALTY:
+        return 0.0     # Unknown phase — be conservative
+    penalty = _PHASE_PENALTY[deepest_undetected_phase]
     return max(0.0, 100.0 - (penalty / _MAX_PHASE_PENALTY) * 100.0)
 
 
@@ -218,41 +211,47 @@ class SessionScorer:
         n_used     = coverage.get("techniques_used_count", 0)
         n_detected = coverage.get("techniques_detected_count", 0)
         cov_pct    = coverage.get("coverage_pct", 0.0)
+        coverage_score = float(cov_pct)  # already 0–100
 
         # ── 6. Report quality (pass-through from Block 6) ─────────────────────
         report_score = max(0.0, min(100.0, report_quality_score))
 
-        # ── 7. Weighted composite ─────────────────────────────────────────────
-        # Coverage score — proportional to MITRE technique coverage %
-        coverage_score = float(cov_pct)
+        # ── 7. Weighted composite (normalised by weight sum) ──────────────────
+        weights = {
+            "detection":   s.weight_detection_rate,
+            "mttd":        s.weight_mttd,
+            "fp":          s.weight_fp_rate,
+            "containment": s.weight_containment,
+            "report":      s.weight_report_quality,
+            "coverage":    s.weight_coverage,
+        }
+        weight_sum = sum(weights.values())
+        if weight_sum <= 0:
+            weight_sum = 1.0  # Safety: never divide by zero
 
-        total = (
-            detection_score * s.weight_detection_rate
-            + mttd_score    * s.weight_mttd
-            + fp_score      * s.weight_fp_rate
-            + contain_score * s.weight_containment
-            + report_score  * s.weight_report_quality
-            + coverage_score * s.weight_coverage
+        weighted_total = (
+            detection_score * weights["detection"]
+            + mttd_score    * weights["mttd"]
+            + fp_score      * weights["fp"]
+            + contain_score * weights["containment"]
+            + report_score  * weights["report"]
+            + coverage_score * weights["coverage"]
         )
+        total = weighted_total / weight_sum
         total = max(0.0, min(100.0, total))
         grade = _assign_grade(total)
 
         # ── 8. Full breakdown for debrief ────────────────────────────────────
         details = {
-            "weights": {
-                "detection_rate":    s.weight_detection_rate,
-                "mttd":              s.weight_mttd,
-                "fp_rate":           s.weight_fp_rate,
-                "containment":       s.weight_containment,
-                "report_quality":    s.weight_report_quality,
-                "coverage":          s.weight_coverage,
-            },
+            "weights": weights,
+            "weight_sum": round(weight_sum, 4),
             "sub_scores": {
                 "detection_score":   round(detection_score, 2),
                 "mttd_score":        round(mttd_score, 2),
                 "fp_score":          round(fp_score, 2),
                 "containment_score": round(contain_score, 2),
                 "report_score":      round(report_score, 2),
+                "coverage_score":    round(coverage_score, 2),
             },
             "raw_metrics": {
                 "total_attack_steps":      len(attack_events),
@@ -312,15 +311,26 @@ class SessionScorer:
         mttd_score_val  = _mttd_to_score(mttd_sec)
         fp_score_val    = _fp_rate_to_score(fp_rate)
 
+        weight_sum = (
+            s.weight_detection_rate
+            + s.weight_mttd
+            + s.weight_fp_rate
+            + s.weight_coverage
+        )
+        if weight_sum <= 0:
+            weight_sum = 1.0
+
         total = (
             detection_score * s.weight_detection_rate
             + mttd_score_val * s.weight_mttd
             + fp_score_val   * s.weight_fp_rate
-            + coverage_pct * s.weight_coverage
-        ) / (s.weight_detection_rate + s.weight_mttd + s.weight_fp_rate + s.weight_coverage) * 100.0
+            + coverage_pct   * s.weight_coverage
+        ) / weight_sum
+
+        total = max(0.0, min(100.0, total))
 
         return {
-            "total_score":    round(min(100.0, max(0.0, total)), 1),
+            "total_score":    round(total, 1),
             "grade":          _assign_grade(total),
             "detection_rate": round(detection_rate * 100.0, 1),
             "fp_rate":        round(fp_rate * 100.0, 1),

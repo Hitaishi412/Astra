@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections import defaultdict
 from typing import Optional
 
 from fastapi import WebSocket, WebSocketDisconnect
@@ -91,19 +90,32 @@ class ConnectionManager:
 
     async def disconnect(self, websocket: WebSocket) -> None:
         """Remove a websocket from whatever room it was in."""
+        ws_to_close: Optional[WebSocket] = None
+        task_to_cancel: Optional[asyncio.Task] = None
+
         async with self._lock:
             for sid, room in list(self._rooms.items()):
                 if id(websocket) in room.clients:
+                    ws_to_close, _ = room.clients[id(websocket)]
                     del room.clients[id(websocket)]
                     logger.info(
                         f"[ws] disconnected session={sid} remaining={len(room.clients)}"
                     )
                     if room.is_empty:
-                        # Stop the consumer task; close the room
-                        if room.consumer_task and not room.consumer_task.done():
-                            room.consumer_task.cancel()
+                        # Defer cancellation/cleanup to outside the lock
+                        task_to_cancel = room.consumer_task
                         del self._rooms[sid]
-                    return
+                    break
+
+        # Do the actual close + cancel outside the lock to avoid blocking other
+        # disconnects and to avoid re-entering the lock if close() has callbacks.
+        if task_to_cancel and not task_to_cancel.done():
+            task_to_cancel.cancel()
+        if ws_to_close is not None:
+            try:
+                await ws_to_close.close()
+            except Exception:
+                pass  # Already closed by client, that's fine
 
     # ════════════════════════════════════════════════════════════════════════
     # CONSUMER LOOP  (one per active session)
@@ -121,30 +133,36 @@ class ConnectionManager:
         """
         backend = get_backend()
         channels = [channel_for(session_id, s) for s in streams]
-        # Also subscribe to streams that any client *might* want, even if the
-        # initiating client didn't ask for it — minor over-subscription is OK.
-        all_streams = {s.value for s in streams}
 
         try:
             async for channel, message in backend.subscribe(*channels):
                 # Determine which stream this channel maps to
                 stream_name = channel.split(":")[-1] if ":" in channel else None
 
-                # Snapshot clients to avoid mutation during iteration
+                # Snapshot clients to avoid mutation during iteration.
+                # We don't hold the lock during send() — sends can be slow,
+                # and disconnect() needs the lock to remove dead clients.
                 room = self._rooms.get(session_id)
                 if room is None:
                     break
                 snapshot = list(room.clients.values())
 
+                dead_websockets: list[WebSocket] = []
                 for ws, wanted in snapshot:
                     if stream_name and stream_name not in wanted:
                         continue
                     try:
                         await ws.send_text(message)
-                    except (WebSocketDisconnect, Exception) as e:
-                        # Client probably disconnected; clean up async
-                        logger.debug(f"[ws] send failed, cleaning up: {e}")
-                        asyncio.create_task(self.disconnect(ws))
+                    except WebSocketDisconnect:
+                        dead_websockets.append(ws)
+                    except Exception as e:
+                        logger.debug(f"[ws] send failed, marking dead: {e}")
+                        dead_websockets.append(ws)
+
+                # Clean up dead websockets after the iteration so we don't
+                # mutate the dict while looping over the snapshot.
+                for ws in dead_websockets:
+                    asyncio.create_task(self.disconnect(ws))
         except asyncio.CancelledError:
             logger.debug(f"[ws] consumer for session={session_id} cancelled")
             raise
@@ -167,15 +185,18 @@ class ConnectionManager:
     async def shutdown(self) -> None:
         """Close all rooms and tasks (called on app shutdown)."""
         async with self._lock:
-            for room in self._rooms.values():
-                if room.consumer_task and not room.consumer_task.done():
-                    room.consumer_task.cancel()
-                for ws, _ in room.clients.values():
-                    try:
-                        await ws.close()
-                    except Exception:
-                        pass
+            rooms = list(self._rooms.values())
             self._rooms.clear()
+
+        # Cancel + close outside the lock
+        for room in rooms:
+            if room.consumer_task and not room.consumer_task.done():
+                room.consumer_task.cancel()
+            for ws, _ in room.clients.values():
+                try:
+                    await ws.close()
+                except Exception:
+                    pass
 
 
 # ════════════════════════════════════════════════════════════════════════════

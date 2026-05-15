@@ -3,14 +3,20 @@ Seed script — populates the database with default data:
 - Default detection rules (Sigma)
 - A demo user for testing
 
+Idempotent — safe to re-run; existing rules with matching names are skipped.
+
 Run with: python -m db.seed
 """
 
 from __future__ import annotations
 
 import asyncio
+
+from sqlalchemy import select
+
 from db.engine import init_db, get_session
 from db.crud import create_user, get_user_by_username, create_detection_rule
+from db.models import DetectionRule
 
 
 # ---------------------------------------------------------------------------
@@ -173,7 +179,7 @@ tags:
 # Seed function
 # ---------------------------------------------------------------------------
 async def seed_database() -> None:
-    """Populate database with default data."""
+    """Populate database with default data. Idempotent — safe to re-run."""
 
     # Ensure tables exist
     await init_db()
@@ -187,12 +193,23 @@ async def seed_database() -> None:
         else:
             print(f"[SEED] Demo user already exists: {demo_user.username}")
 
-        # Create default detection rules
+        # Find existing rule names (so we don't duplicate)
+        existing = await db.execute(
+            select(DetectionRule.name).where(DetectionRule.is_default == True)
+        )
+        existing_names = {row[0] for row in existing.all()}
+
+        created = 0
+        skipped = 0
         for rule_data in DEFAULT_RULES:
+            if rule_data["name"] in existing_names:
+                skipped += 1
+                continue
             rule = await create_detection_rule(db, **rule_data)
             print(f"[SEED] Created rule: {rule.name}")
+            created += 1
 
-    print(f"\n[SEED] Done — {len(DEFAULT_RULES)} default rules loaded.")
+    print(f"\n[SEED] Done — {created} new, {skipped} already present.")
 
 
 # ---------------------------------------------------------------------------

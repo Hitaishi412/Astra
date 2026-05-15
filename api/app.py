@@ -38,7 +38,6 @@ async def lifespan(app: FastAPI):
     yield
 
     # Cleanup
-    # Cleanup
     from streaming.backend import close_backend
     from streaming.manager import get_ws_manager
     await get_ws_manager().shutdown()
@@ -108,21 +107,17 @@ def _register_routers(app: FastAPI) -> None:
     app.include_router(progress_router, prefix="/progress", tags=["Progress"])
     app.include_router(reports_router, prefix="/reports", tags=["Reports"])
 
-
-    # Block 2 (attacks router — optional, only if your friend added it)
+    # Block 2 (attacks router)
     try:
         from api.routers.attacks import router as attacks_router
         app.include_router(attacks_router, prefix="/attacks", tags=["Attacks"])
     except ImportError:
         pass
 
-    # Block 2 (your friend's attack router)
+    # Pentester decision-tree mode
     try:
-        from api.routers.attacks import router as attacks_router
-        app.include_router(attacks_router, prefix="/attacks", tags=["Attacks"])
-    except ImportError:
-        pass
-
-    # Future routers (uncomment when built):
-    # from api.routers.logs import router as logs_router
-    # from api.routers.reports import router as reports_router
+        from api.routers.pentester import router as pentester_router
+        app.include_router(pentester_router, prefix="/pentester", tags=["Pentester"])
+    except Exception as e:
+        import logging
+        logging.getLogger("astra.api").exception(f"Pentester router not mounted: {e}")

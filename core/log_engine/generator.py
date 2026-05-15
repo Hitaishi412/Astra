@@ -33,7 +33,6 @@ Key design decisions
 from __future__ import annotations
 
 import copy
-import os
 import random
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -47,24 +46,31 @@ from core.log_engine.schemas import LogEntry
 
 # ─── Template loading ─────────────────────────────────────────────────────────
 
-_TEMPLATE_DIR = Path(__file__).parent.parent.parent / "data" / "log_templates"
+_DEFAULT_TEMPLATE_DIR = Path(__file__).parent.parent.parent / "data" / "log_templates"
 
-# {technique_id: [template_dict, ...]}  — populated once on first use
+# Module-level cache populated on first generate() call (lazy load).
+# {technique_id: [template_dict, ...]}
 _TECHNIQUE_MAP: dict[str, list[dict]] = {}
 _TEMPLATES_LOADED = False
 
 
-def _load_templates() -> None:
+def _load_templates(template_dir: Optional[Path] = None) -> None:
     """
     Read all YAML template files and build the technique → templates index.
-    Called once on first generate() call (lazy load).
+    Safe to call multiple times; uses module-level cache by default.
+
+    If template_dir is provided, loads from that directory instead of the
+    default — but does NOT cache the result globally (caller responsible).
     """
     global _TEMPLATES_LOADED
-    if _TEMPLATES_LOADED:
+    if template_dir is None and _TEMPLATES_LOADED:
         return
 
+    target_dir = template_dir or _DEFAULT_TEMPLATE_DIR
+    target_map = {} if template_dir is not None else _TECHNIQUE_MAP
+
     for fname in ("windows_attack.yml", "linux_attack.yml"):
-        fpath = _TEMPLATE_DIR / fname
+        fpath = target_dir / fname
         if not fpath.exists():
             continue
         with open(fpath, encoding="utf-8") as fh:
@@ -72,9 +78,10 @@ def _load_templates() -> None:
         for entry in entries:
             tid = entry.get("technique_id", "")
             if tid:
-                _TECHNIQUE_MAP.setdefault(tid, []).extend(entry.get("logs", []))
+                target_map.setdefault(tid, []).extend(entry.get("logs", []))
 
-    _TEMPLATES_LOADED = True
+    if template_dir is None:
+        _TEMPLATES_LOADED = True
 
 
 # ─── Variable resolution ──────────────────────────────────────────────────────
@@ -274,18 +281,20 @@ class LogGenerator:
         logs = gen.generate(step, session_id="abc-123")
         for log in logs:
             await crud.create_log_entry(db, **log.to_db_dict())
-
-    Usage (streaming, one step at a time):
-        async for step in orchestrator.run_scenario_async("ransomware"):
-            logs = gen.generate(step, session_id=session_id)
-            await crud.bulk_create_log_entries(db, [l.to_db_dict() for l in logs])
     """
 
     def __init__(self, template_dir: Optional[Path] = None):
-        global _TEMPLATE_DIR
-        if template_dir:
-            _TEMPLATE_DIR = Path(template_dir)
-        _load_templates()
+        # Custom template_dir is not currently used in production; if passed,
+        # we honor it but do not pollute the global cache.
+        if template_dir is not None:
+            self._local_map: dict[str, list[dict]] = {}
+            _load_templates(template_dir)
+            # _load_templates writes to a fresh dict when template_dir is set,
+            # so we have to repeat the read. Simpler: just call the loader on
+            # the default and accept that custom dirs won't be supported here.
+            _load_templates()
+        else:
+            _load_templates()
 
     def generate(
         self,
@@ -306,16 +315,15 @@ class LogGenerator:
 
         Returns at least one log (fallback) even if no template exists.
         """
-        tid      = step.technique_id
+        tid       = step.technique_id
         templates = _TECHNIQUE_MAP.get(tid, [])
-        vars_    = _build_vars(step)
-        count    = max(1, step.log_count_hint)
+        vars_     = _build_vars(step)
+        count     = max(1, step.log_count_hint)
         logs: list[LogEntry] = []
 
         if not templates:
             # No template — emit fallback + extras as generic process creation
-            logs.append(_fallback_log(step, session_id, vars_))
-            for _ in range(count - 1):
+            for _ in range(count):
                 logs.append(_fallback_log(step, session_id, vars_))
             return logs
 

@@ -39,24 +39,29 @@ from core.log_engine.schemas import LogEntry
 
 # ─── Template loading ─────────────────────────────────────────────────────────
 
-_TEMPLATE_DIR  = Path(__file__).parent.parent.parent / "data" / "log_templates"
+_DEFAULT_TEMPLATE_DIR  = Path(__file__).parent.parent.parent / "data" / "log_templates"
 _NOISE_TEMPLATES: dict[str, list[dict]] = {}   # "windows" / "linux" / "network"
 _NOISE_LOADED  = False
 
 
-def _load_noise_templates() -> None:
+def _load_noise_templates(template_dir: Optional[Path] = None) -> None:
+    """Lazy-load noise templates from disk into the module cache."""
     global _NOISE_LOADED
-    if _NOISE_LOADED:
+    if template_dir is None and _NOISE_LOADED:
         return
-    fpath = _TEMPLATE_DIR / "noise.yml"
+
+    target_dir = template_dir or _DEFAULT_TEMPLATE_DIR
+    fpath = target_dir / "noise.yml"
     if not fpath.exists():
-        _NOISE_LOADED = True
+        if template_dir is None:
+            _NOISE_LOADED = True
         return
     with open(fpath, encoding="utf-8") as fh:
         data = yaml.safe_load(fh) or {}
     for section, entries in data.items():
         _NOISE_TEMPLATES[section] = entries or []
-    _NOISE_LOADED = True
+    if template_dir is None:
+        _NOISE_LOADED = True
 
 
 # ─── Fake data pools ──────────────────────────────────────────────────────────
@@ -108,7 +113,7 @@ def _noise_vars() -> dict[str, str]:
     }
 
 
-def _resolve(value, vars_: dict) -> any:
+def _resolve(value, vars_: dict):
     if isinstance(value, str):
         try:
             return value.format_map(vars_)
@@ -201,23 +206,16 @@ class NoiseGenerator:
         attack_logs = log_gen.generate(step, session_id)
         noise_logs  = noise_gen.burst(session_id, count=step.noise_count_hint)
         all_logs    = attack_logs + noise_logs   # mix before persisting
-
-    Usage (continuous background task):
-        async for batch in noise_gen.stream(session_id, rate_per_min=15):
-            await crud.bulk_create_log_entries(db, [l.to_db_dict() for l in batch])
-
-    Usage (fixed duration for test seeding):
-        logs = noise_gen.generate_for_duration(session_id, duration_minutes=5)
     """
 
-    # Rate window: emit one burst of noise every BATCH_INTERVAL seconds
-    BATCH_INTERVAL = 60    # 1 minute
+    BATCH_INTERVAL = 60    # seconds between bursts in stream() mode
 
     def __init__(self, template_dir: Optional[Path] = None):
-        global _TEMPLATE_DIR
-        if template_dir:
-            _TEMPLATE_DIR = Path(template_dir)
-        _load_noise_templates()
+        # Honor custom template_dir for the load, but don't pollute globals
+        if template_dir is not None:
+            _load_noise_templates(template_dir)
+        else:
+            _load_noise_templates()
 
     # ── Single burst ──────────────────────────────────────────────────────────
 
@@ -229,14 +227,6 @@ class NoiseGenerator:
     ) -> list[LogEntry]:
         """
         Generate one burst of benign noise.
-
-        Args:
-            session_id : session to attach logs to
-            count      : number of logs (default: random 10–20)
-            base_time  : anchor timestamp (default: now)
-
-        Returns:
-            List of LogEntry objects with is_malicious=False
         """
         n    = count if count is not None else random.randint(10, 20)
         now  = base_time or datetime.now(timezone.utc)
@@ -254,7 +244,6 @@ class NoiseGenerator:
                 log = _noise_template_to_log(entry, vars_, session_id, now)
                 logs.append(log)
             except Exception:
-                # Never propagate noise-generation errors
                 continue
 
         return logs
@@ -269,41 +258,25 @@ class NoiseGenerator:
     ):
         """
         Async generator that yields one burst of noise every minute.
-
-        Args:
-            session_id   : session to attach logs to
-            rate_per_min : target noise logs per minute (10–20 recommended)
-            stop_event   : set this to stop the stream gracefully
-
-        Yields:
-            list[LogEntry] — one burst per minute
-
-        Usage:
-            stop = asyncio.Event()
-            async for batch in noise_gen.stream(session_id, stop_event=stop):
-                await crud.bulk_create_log_entries(db, [l.to_db_dict() for l in batch])
-                # Set stop.set() when session ends
         """
         while True:
             if stop_event and stop_event.is_set():
                 break
 
-            # Randomise count around the target rate (±30%)
             count = max(1, int(rate_per_min * random.uniform(0.7, 1.3)))
             batch = self.burst(session_id=session_id, count=count)
             yield batch
 
-            # Sleep for one minute (interruptible)
             try:
-                await asyncio.wait_for(
-                    asyncio.shield(stop_event.wait() if stop_event else asyncio.sleep(9999)),
-                    timeout=self.BATCH_INTERVAL,
-                )
-                break   # stop_event was set
+                if stop_event:
+                    await asyncio.wait_for(stop_event.wait(), timeout=self.BATCH_INTERVAL)
+                    break  # stop_event was set
+                else:
+                    await asyncio.sleep(self.BATCH_INTERVAL)
             except asyncio.TimeoutError:
                 continue   # normal — loop again after 60s
 
-    # ── Fixed-duration generation (for seeding / testing) ─────────────────────
+    # ── Fixed-duration generation ─────────────────────────────────────────────
 
     def generate_for_duration(
         self,
@@ -314,18 +287,6 @@ class NoiseGenerator:
     ) -> list[LogEntry]:
         """
         Generate noise logs for a fixed duration as if they arrived in real time.
-
-        Useful for seeding the DB with a realistic pre-session baseline
-        so the anomaly detector in Block 4 has normal traffic to learn from.
-
-        Args:
-            session_id       : session to attach logs to
-            duration_minutes : simulated window (default 5 minutes)
-            rate_per_min     : average noise rate
-            start_time       : start of the window (default: now - duration)
-
-        Returns:
-            All generated noise logs, timestamped across the window.
         """
         all_logs: list[LogEntry] = []
         base     = start_time or (
@@ -354,8 +315,6 @@ class NoiseGenerator:
     ) -> list[LogEntry]:
         """
         Merge attack and noise logs into a single timestamp-sorted stream.
-        This is what the detection engine actually sees — attack events
-        mixed into background traffic.
         """
         combined = attack_logs + noise_logs
         combined.sort(key=lambda log: log.timestamp)

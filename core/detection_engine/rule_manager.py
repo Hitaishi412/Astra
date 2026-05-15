@@ -8,11 +8,15 @@ Loads, caches, and manages Sigma detection rules from two sources:
 
 The manager parses each rule once and caches the SigmaRule objects.
 The Detection Pipeline holds a single RuleManager instance per session.
+
+Deduplication: when both disk and DB sources contain rules with the same
+human-readable name (which happens because db/seed.py also seeds defaults),
+only the first one wins. This prevents duplicate alerts firing for the
+same Sigma rule.
 """
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import Optional
 
@@ -33,14 +37,15 @@ class RuleManager:
 
     Usage:
         mgr = RuleManager()
-        await mgr.load_defaults_from_disk()
+        mgr.load_defaults_from_disk()
         await mgr.load_user_rules_from_db(db_session, session_id="...")
         rules = mgr.active_rules()
     """
 
     def __init__(self):
         self._rules: dict[str, SigmaRule] = {}             # rule_id → SigmaRule
-        self._rule_meta: dict[str, dict] = {}              # rule_id → metadata (db_id, source, enabled)
+        self._rule_meta: dict[str, dict] = {}              # rule_id → metadata
+        self._names_seen: set[str] = set()                 # case-insensitive names
 
     # ── Loading ──────────────────────────────────────────────────────────────
     def load_defaults_from_disk(self) -> int:
@@ -56,12 +61,15 @@ class RuleManager:
             try:
                 yaml_text = path.read_text(encoding="utf-8")
                 rule = parse_sigma_rule(yaml_text, rule_id=path.stem)
+                if self._is_dup_name(rule.name):
+                    continue
                 self._rules[rule.id] = rule
                 self._rule_meta[rule.id] = {
                     "source": "default",
                     "path": str(path),
                     "enabled": True,
                 }
+                self._names_seen.add(rule.name.strip().lower())
                 count += 1
             except Exception as e:
                 # Don't fail the whole load over one bad file
@@ -86,12 +94,19 @@ class RuleManager:
                 parsed.name = rule_row.name
                 parsed.description = rule_row.description or parsed.description
                 parsed.severity = rule_row.severity or parsed.severity
+
+                # Skip rules that already match a name we've loaded from disk.
+                # This is the common case for "default" rules also seeded into the DB.
+                if self._is_dup_name(parsed.name):
+                    continue
+
                 self._rules[parsed.id] = parsed
                 self._rule_meta[parsed.id] = {
                     "source": "default" if rule_row.is_default else "user",
                     "db_id": rule_row.id,
                     "enabled": rule_row.enabled,
                 }
+                self._names_seen.add(parsed.name.strip().lower())
                 count += 1
             except Exception as e:
                 print(f"[RULE_MGR] Failed to parse DB rule {rule_row.name}: {e}")
@@ -102,6 +117,7 @@ class RuleManager:
         rule = parse_sigma_rule(yaml_text, rule_id=rule_id)
         self._rules[rule.id] = rule
         self._rule_meta[rule.id] = {"source": "user", "enabled": True}
+        self._names_seen.add(rule.name.strip().lower())
         return rule
 
     # ── Querying ─────────────────────────────────────────────────────────────
@@ -136,14 +152,21 @@ class RuleManager:
 
     def remove(self, rule_id: str) -> bool:
         if rule_id in self._rules:
+            rule = self._rules[rule_id]
             del self._rules[rule_id]
             self._rule_meta.pop(rule_id, None)
+            self._names_seen.discard(rule.name.strip().lower())
             return True
         return False
 
     def clear(self) -> None:
         self._rules.clear()
         self._rule_meta.clear()
+        self._names_seen.clear()
+
+    # ── Internal helpers ─────────────────────────────────────────────────────
+    def _is_dup_name(self, name: str) -> bool:
+        return (name or "").strip().lower() in self._names_seen
 
     # ── Stats ────────────────────────────────────────────────────────────────
     @property
