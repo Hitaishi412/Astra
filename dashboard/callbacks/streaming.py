@@ -196,7 +196,7 @@ def register(app):
 
         # ── Step 1: create the session in the DB ─────────────────────────
         try:
-            with httpx.Client(timeout=5.0, headers=auth_headers(token)) as client:
+            with httpx.Client(timeout=30.0, headers=auth_headers(token)) as client:
                 resp = client.post(
                     f"{api_base}/sessions",
                     json={
@@ -224,7 +224,7 @@ def register(app):
 
         # ── Step 2: kick off the background attack driver ────────────────
         try:
-            with httpx.Client(timeout=5.0, headers=auth_headers(token)) as client:
+            with httpx.Client(timeout=30.0, headers=auth_headers(token)) as client:
                 run_resp = client.post(
                     f"{api_base}/attacks/run/{scenario}",
                     params={"session_id": session_id, "difficulty": api_difficulty},
@@ -386,7 +386,7 @@ def register(app):
         # For sparkline, fetch recent scores (cheap polling)
         history = []
         try:
-            with httpx.Client(timeout=2.0, headers=auth_headers(token)) as client:
+            with httpx.Client(timeout=30.0, headers=auth_headers(token)) as client:
                 r = client.get(f"{api_base}/scoring/leaderboard?limit=10")
                 r.raise_for_status()
                 history = [e.get("total_score", 0) for e in reversed(r.json())]
@@ -412,7 +412,7 @@ def register(app):
             return no_update, no_update, no_update
         # Tell backend to stop
         try:
-            with httpx.Client(timeout=3.0, headers=auth_headers(token)) as client:
+            with httpx.Client(timeout=30.0, headers=auth_headers(token)) as client:
                 client.post(f"{api_base}/attacks/abort", json={"session_id": session_id})
         except Exception:
             pass
@@ -487,7 +487,7 @@ def register(app):
             body["is_true_positive"] = is_tp
 
         try:
-            with httpx.Client(timeout=4.0, headers=auth_headers(token)) as client:
+            with httpx.Client(timeout=30.0, headers=auth_headers(token)) as client:
                 resp = client.patch(f"{api_base}/alerts/{alert_id}/triage", json=body)
             if resp.status_code in (200, 201):
                 return f"✓ Triaged as {triage_status.replace('_', ' ')}"
@@ -518,7 +518,7 @@ def register(app):
             return no_update
         # Stop the running session — best-effort
         try:
-            with httpx.Client(timeout=3.0, headers=auth_headers(token)) as client:
+            with httpx.Client(timeout=30.0, headers=auth_headers(token)) as client:
                 client.post(f"{api_base}/attacks/abort", json={"session_id": session_id})
         except Exception:
             pass

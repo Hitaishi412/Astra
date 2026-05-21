@@ -23,7 +23,7 @@ from dashboard.callbacks._auth import auth_headers
 logger = logging.getLogger("astra.dashboard.report_writer")
 
 
-def _safe_get(url: str, timeout: float = 4.0, headers: dict | None = None) -> Any:
+def _safe_get(url: str, timeout: float = 30.0, headers: dict | None = None) -> Any:
     try:
         with httpx.Client(timeout=timeout) as client:
             r = client.get(url, headers=headers or {})
@@ -34,7 +34,7 @@ def _safe_get(url: str, timeout: float = 4.0, headers: dict | None = None) -> An
         return None
 
 
-def _safe_post(url: str, json: dict, timeout: float = 8.0, headers: dict | None = None) -> Any:
+def _safe_post(url: str, json: dict, timeout: float = 30.0, headers: dict | None = None) -> Any:
     try:
         with httpx.Client(timeout=timeout) as client:
             r = client.post(url, json=json, headers=headers or {})
