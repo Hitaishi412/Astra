@@ -24,6 +24,7 @@ from typing import Any, Optional
 import httpx
 from dash import ALL, Input, Output, State, ctx as dash_ctx, dcc, html, no_update
 
+from dashboard.callbacks._auth import auth_headers
 from dashboard.components.renderers import (
     render_alert_card,
     render_kill_chain,
@@ -180,9 +181,10 @@ def register(app):
         State("launcher-difficulty", "value"),
         State("active-mode", "data"),
         State("api-base", "data"),
+        State("auth-token", "data"),
         prevent_initial_call=True,
     )
-    def launch_session(n_clicks, scenario, difficulty, mode, api_base):
+    def launch_session(n_clicks, scenario, difficulty, mode, api_base, token):
         if not n_clicks or not scenario:
             return no_update, no_update, no_update, no_update
 
@@ -194,7 +196,7 @@ def register(app):
 
         # ── Step 1: create the session in the DB ─────────────────────────
         try:
-            with httpx.Client(timeout=5.0) as client:
+            with httpx.Client(timeout=5.0, headers=auth_headers(token)) as client:
                 resp = client.post(
                     f"{api_base}/sessions",
                     json={
@@ -222,7 +224,7 @@ def register(app):
 
         # ── Step 2: kick off the background attack driver ────────────────
         try:
-            with httpx.Client(timeout=5.0) as client:
+            with httpx.Client(timeout=5.0, headers=auth_headers(token)) as client:
                 run_resp = client.post(
                     f"{api_base}/attacks/run/{scenario}",
                     params={"session_id": session_id, "difficulty": api_difficulty},
@@ -367,9 +369,10 @@ def register(app):
         Output("score-sparkline-chart", "figure"),
         Input("live-stats-store", "data"),
         State("api-base", "data"),
+        State("auth-token", "data"),
         State("active-mode", "data"),
     )
-    def render_donut_and_sparkline(stats, api_base, mode):
+    def render_donut_and_sparkline(stats, api_base, mode, token):
         from dashboard.components.charts import coverage_donut, score_sparkline, empty_chart
         if not stats:
             return empty_chart("0%", height=140), empty_chart("", height=60)
@@ -383,7 +386,7 @@ def register(app):
         # For sparkline, fetch recent scores (cheap polling)
         history = []
         try:
-            with httpx.Client(timeout=2.0) as client:
+            with httpx.Client(timeout=2.0, headers=auth_headers(token)) as client:
                 r = client.get(f"{api_base}/scoring/leaderboard?limit=10")
                 r.raise_for_status()
                 history = [e.get("total_score", 0) for e in reversed(r.json())]
@@ -400,15 +403,16 @@ def register(app):
         Input("abort-button", "n_clicks"),
         State("active-session", "data"),
         State("api-base", "data"),
+        State("auth-token", "data"),
         State("active-mode", "data"),
         prevent_initial_call=True,
     )
-    def abort_session(n_clicks, session_id, api_base, mode):
+    def abort_session(n_clicks, session_id, api_base, mode, token):
         if not n_clicks or not session_id:
             return no_update, no_update, no_update
         # Tell backend to stop
         try:
-            with httpx.Client(timeout=3.0) as client:
+            with httpx.Client(timeout=3.0, headers=auth_headers(token)) as client:
                 client.post(f"{api_base}/attacks/abort", json={"session_id": session_id})
         except Exception:
             pass
@@ -459,9 +463,10 @@ def register(app):
         State("selected-alert-id", "data"),
         State("triage-notes-input", "value"),
         State("api-base", "data"),
+        State("auth-token", "data"),
         prevent_initial_call=True,
     )
-    def submit_triage(_tp, _fp, _esc, alert_id, notes, api_base):
+    def submit_triage(_tp, _fp, _esc, alert_id, notes, api_base, token):
         if not alert_id or not dash_ctx.triggered_id:
             return no_update
         clicked = dash_ctx.triggered_id
@@ -482,7 +487,7 @@ def register(app):
             body["is_true_positive"] = is_tp
 
         try:
-            with httpx.Client(timeout=4.0) as client:
+            with httpx.Client(timeout=4.0, headers=auth_headers(token)) as client:
                 resp = client.patch(f"{api_base}/alerts/{alert_id}/triage", json=body)
             if resp.status_code in (200, 201):
                 return f"✓ Triaged as {triage_status.replace('_', ' ')}"
@@ -505,14 +510,15 @@ def register(app):
         Input("end-and-report-button", "n_clicks"),
         State("active-session", "data"),
         State("api-base", "data"),
+        State("auth-token", "data"),
         prevent_initial_call=True,
     )
-    def end_and_write_report(n_clicks, session_id, api_base):
+    def end_and_write_report(n_clicks, session_id, api_base, token):
         if not n_clicks or not session_id:
             return no_update
         # Stop the running session — best-effort
         try:
-            with httpx.Client(timeout=3.0) as client:
+            with httpx.Client(timeout=3.0, headers=auth_headers(token)) as client:
                 client.post(f"{api_base}/attacks/abort", json={"session_id": session_id})
         except Exception:
             pass
