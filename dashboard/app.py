@@ -56,7 +56,18 @@ app = dash.Dash(
 )
 
 API_BASE = os.getenv("ASTRA_API_BASE", "http://localhost:8000")
-WS_BASE = os.getenv("ASTRA_WS_BASE", "ws://localhost:8000")
+# Render's fromService:host gives just the hostname; prepend https:// if missing
+if API_BASE and not API_BASE.startswith(("http://", "https://")):
+    API_BASE = f"https://{API_BASE}"
+WS_BASE = os.getenv("ASTRA_WS_BASE", "")
+# If WS_BASE not set explicitly, derive from API_BASE (http -> ws, https -> wss)
+if not WS_BASE:
+    if API_BASE.startswith("https://"):
+        WS_BASE = "wss://" + API_BASE[len("https://"):]
+    elif API_BASE.startswith("http://"):
+        WS_BASE = "ws://" + API_BASE[len("http://"):]
+    else:
+        WS_BASE = "ws://localhost:8000"
 
 # Inject firebase-auth.js as an ES module. {%...%} are Dash index_string
 # placeholders and must be preserved exactly. Dash still serves the static
