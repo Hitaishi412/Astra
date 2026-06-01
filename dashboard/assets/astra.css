@@ -1127,3 +1127,81 @@ a:hover { color: var(--accent-bright); }
 .astra-nav-logout:active {
   transform: translateY(1px);
 }
+
+/* ════════════════════════════════════════════════════════════════════════
+   AUTH PAGE RE-THEME — acid-green to match the landing.
+   Appended last so these override the original blue .auth-* rules above.
+   ════════════════════════════════════════════════════════════════════════ */
+
+/* atmospheric background: radial accent glow + brighter grid (landing feel) */
+.auth-page::before {
+  background-image:
+    radial-gradient(48rem 32rem at 50% -8%, var(--accent-soft), transparent 60%),
+    linear-gradient(var(--border-hair) 1px, transparent 1px),
+    linear-gradient(90deg, var(--border-hair) 1px, transparent 1px);
+  background-size: auto, 56px 56px, 56px 56px;
+  mask-image: radial-gradient(ellipse 60% 70% at center, #000 30%, transparent 78%);
+  -webkit-mask-image: radial-gradient(ellipse 60% 70% at center, #000 30%, transparent 78%);
+}
+
+/* glass card matching the landing console */
+.auth-card {
+  background: var(--bg-glass);
+  border: 1px solid var(--border-default);
+  border-radius: 12px;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.55),
+              inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+/* top accent hairline → acid-green */
+.auth-card::before {
+  background: linear-gradient(90deg, transparent, var(--accent) 50%, transparent);
+  opacity: 0.8;
+}
+
+/* brand wordmark */
+.auth-brand { color: var(--text-primary); }
+.auth-brand-sub { color: var(--accent-dim); }
+
+/* tab group */
+.auth-tabs { border: 1px solid var(--border-default); border-radius: 7px; }
+.auth-tab { color: var(--text-tertiary); }
+.auth-tab:hover { color: var(--text-primary); }
+.auth-tab.is-active {
+  background: var(--accent-soft);
+  color: var(--accent-bright);
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+/* inputs */
+.auth-input {
+  background: var(--bg-input);
+  border: 1px solid var(--border-default);
+  border-radius: 7px;
+  color: var(--text-primary);
+}
+.auth-input::placeholder { color: var(--text-tertiary); }
+.auth-input:focus {
+  border-color: var(--border-accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+/* primary button → acid-green with dark text + glow on hover */
+.auth-btn {
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 7px;
+  color: var(--bg-base);
+  transition: transform 0.15s, box-shadow 0.2s, background 0.15s;
+}
+.auth-btn:hover {
+  background: var(--accent-bright);
+  box-shadow: 0 8px 28px var(--accent-glow);
+}
+.auth-btn:active { transform: translateY(1px); }
+
+/* error + footer */
+.auth-error { color: var(--severity-critical); }
+.auth-foot { color: var(--text-tertiary); letter-spacing: 0.34em; }
