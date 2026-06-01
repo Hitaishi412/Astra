@@ -88,6 +88,15 @@ def get_engine() -> AsyncEngine:
             # when run.py seeds in one asyncio loop and then serves the
             # app in a second loop while reusing a cached pool.
             poolclass=NullPool,
+            # Transaction-mode pooler (Supavisor :6543) can route each
+            # transaction to a different backend, which breaks asyncpg's
+            # prepared-statement cache. Disable asyncpg's cache and
+            # SQLAlchemy's dialect cache. Harmless on the :5432 session
+            # pooler too, so it's safe regardless of the URL port.
+            connect_args={
+                "statement_cache_size": 0,
+                "prepared_statement_cache_size": 0,
+            },
         )
     return _engine
 

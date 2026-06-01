@@ -75,6 +75,9 @@ class _SessionBuffer:
 _buffers: dict[str, _SessionBuffer] = {}
 _buffers_lock = threading.Lock()
 
+_SPARK_FETCH_EVERY = 10
+_spark_state = {"tick": 0, "history": []}
+
 
 def _get_buffer(session_id: str) -> _SessionBuffer:
     with _buffers_lock:
@@ -383,16 +386,19 @@ def register(app):
         used     = mitre.get("techniques_used", 0)     if isinstance(mitre, dict) else 0
         donut = coverage_donut(coverage_pct, detected=detected, total=used)
 
-        # For sparkline, fetch recent scores (cheap polling)
-        history = []
-        try:
-            with httpx.Client(timeout=30.0, headers=auth_headers(token)) as client:
-                r = client.get(f"{api_base}/scoring/leaderboard?limit=10")
-                r.raise_for_status()
-                history = [e.get("total_score", 0) for e in reversed(r.json())]
-        except Exception:
-            pass
-        spark = score_sparkline(history, current=stats.get("score"))
+        # Throttled: hit the leaderboard every _SPARK_FETCH_EVERY ticks,
+        # else reuse cached history. Near-static second-to-second, so this is
+        # invisible to the user but cuts live DB load ~10x.
+        _spark_state["tick"] += 1
+        if _spark_state["tick"] % _SPARK_FETCH_EVERY == 1:
+            try:
+                with httpx.Client(timeout=30.0, headers=auth_headers(token)) as client:
+                    r = client.get(f"{api_base}/scoring/leaderboard?limit=10")
+                    r.raise_for_status()
+                    _spark_state["history"] = [e.get("total_score", 0) for e in reversed(r.json())]
+            except Exception:
+                pass
+        spark = score_sparkline(_spark_state["history"], current=stats.get("score"))
         return donut, spark
 
     # ── Abort button ─────────────────────────────────────────────────────
