@@ -191,6 +191,22 @@ def auth_layout() -> html.Div:
     )
 
 
+def landing_layout() -> html.Iframe:
+    """Full-viewport marketing landing, served as a self-contained static
+    asset (assets/landing.html) inside an overlay iframe. The iframe covers
+    the whole viewport (including the Dash footer) so the landing reads as a
+    standalone page. Its CTAs navigate the top window to /signin."""
+    return html.Iframe(
+        src="/assets/landing.html",
+        sandbox="allow-scripts allow-top-navigation allow-top-navigation-by-user-activation allow-same-origin",
+        style={
+            "position": "fixed", "top": 0, "left": 0,
+            "width": "100vw", "height": "100vh",
+            "border": "0", "zIndex": 1000, "background": "var(--bg-base)",
+        },
+    )
+
+
 app.layout = html.Div(
     [
         dcc.Location(id="url", refresh=False),
@@ -238,11 +254,17 @@ def render_page(pathname: str, token, current_mode):
     was only read on URL change, so login appeared to 'do nothing' until
     a manual reload."""
     if not token:
-        return auth_layout(), current_mode, None
+        # Auth form lives only at /signin; every other route shows the
+        # landing page. Landing CTAs navigate (_top) to /signin.
+        if pathname == "/signin":
+            return auth_layout(), current_mode, None
+        return landing_layout(), current_mode, None
 
     nav = navbar()
 
-    if pathname is None or pathname == "/":
+    # Logged in but sitting on the landing / sign-in route (e.g. just
+    # finished signing in) -> send to the mode picker.
+    if pathname in (None, "/", "/signin"):
         return mode_picker.layout(), current_mode, nav
 
     if pathname == "/launch/pentester":
