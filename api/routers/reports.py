@@ -4,12 +4,16 @@ api/routers/reports.py
 Reports API.
 
 Endpoints:
-    GET  /reports/templates/{mode}              — templates available for a mode
+    GET  /reports/templates/{mode}              — templates available for a mode (public reference)
     GET  /reports/{session_id}/facts            — ground truth facts for the side panel
     GET  /reports/{session_id}                  — list reports submitted for a session
     GET  /reports/{session_id}/{report_type}    — fetch a specific report (draft or submitted)
     POST /reports/{session_id}/draft            — autosave a draft
     POST /reports/{session_id}/submit           — final submission, runs evaluator
+
+Auth: every session-scoped endpoint requires a valid token and verifies the
+session belongs to the caller (404, not 403, otherwise). Only /templates/{mode}
+is unauthenticated — it returns static report structure, no user data.
 """
 
 from __future__ import annotations
@@ -23,6 +27,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.deps import get_db
+from api.firebase_auth import get_current_user
+from api.ownership import verify_session_owner
 from api.schemas.report import (
     DimensionFeedback,
     DraftIn,
@@ -42,7 +48,7 @@ from core.reports.templates import (
     get_template,
     templates_for_mode,
 )
-from db.models import Report, Score, Session as SessionModel
+from db.models import Report, Score, Session as SessionModel, User
 
 logger = logging.getLogger("astra.api.reports")
 router = APIRouter()
@@ -71,16 +77,8 @@ def _template_to_schema(t) -> ReportTemplateOut:
     )
 
 
-async def _get_session_or_404(session_id: str, db: AsyncSession) -> SessionModel:
-    result = await db.execute(select(SessionModel).where(SessionModel.id == session_id))
-    session = result.scalar_one_or_none()
-    if session is None:
-        raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
-    return session
-
-
 # ════════════════════════════════════════════════════════════════════════════
-# GET /reports/templates/{mode}
+# GET /reports/templates/{mode}   — public static reference (no user data)
 # ════════════════════════════════════════════════════════════════════════════
 @router.get("/templates/{mode}", response_model=list[ReportTemplateOut])
 async def get_templates_for_mode(mode: str):
@@ -94,8 +92,14 @@ async def get_templates_for_mode(mode: str):
 # GET /reports/{session_id}/facts
 # ════════════════════════════════════════════════════════════════════════════
 @router.get("/{session_id}/facts", response_model=SessionFactsOut)
-async def get_session_facts(session_id: str, db: AsyncSession = Depends(get_db)):
+async def get_session_facts(
+    session_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
     """Get ground-truth facts about a session for the side panel."""
+    await verify_session_owner(db, session_id, current_user)
+
     facts = await collect_session_facts(session_id, db)
     if facts is None:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -123,8 +127,14 @@ async def get_session_facts(session_id: str, db: AsyncSession = Depends(get_db))
 # GET /reports/{session_id}              — list reports for a session
 # ════════════════════════════════════════════════════════════════════════════
 @router.get("/{session_id}", response_model=list[ReportOut])
-async def list_reports_for_session(session_id: str, db: AsyncSession = Depends(get_db)):
+async def list_reports_for_session(
+    session_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
     """List all reports (drafts and submissions) for a session."""
+    await verify_session_owner(db, session_id, current_user)
+
     result = await db.execute(
         select(Report).where(Report.session_id == session_id)
     )
@@ -136,10 +146,17 @@ async def list_reports_for_session(session_id: str, db: AsyncSession = Depends(g
 # GET /reports/{session_id}/{report_type}    — fetch a specific report
 # ════════════════════════════════════════════════════════════════════════════
 @router.get("/{session_id}/{report_type}", response_model=ReportOut)
-async def get_report(session_id: str, report_type: str, db: AsyncSession = Depends(get_db)):
+async def get_report(
+    session_id: str,
+    report_type: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
     """Fetch a specific report for a session."""
     if report_type not in {"incident", "pentest"}:
         raise HTTPException(status_code=400, detail=f"Unknown report_type: {report_type}")
+
+    await verify_session_owner(db, session_id, current_user)
 
     result = await db.execute(
         select(Report)
@@ -156,12 +173,17 @@ async def get_report(session_id: str, report_type: str, db: AsyncSession = Depen
 # POST /reports/{session_id}/draft   — autosave
 # ════════════════════════════════════════════════════════════════════════════
 @router.post("/{session_id}/draft", response_model=DraftOut)
-async def save_draft(session_id: str, body: DraftIn, db: AsyncSession = Depends(get_db)):
+async def save_draft(
+    session_id: str,
+    body: DraftIn,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
     """Save (or autosave) a draft of the report."""
     if body.report_type not in {"incident", "pentest"}:
         raise HTTPException(status_code=400, detail=f"Unknown report_type: {body.report_type}")
 
-    session = await _get_session_or_404(session_id, db)
+    session = await verify_session_owner(db, session_id, current_user)
 
     # Look for existing report of this type
     existing_q = await db.execute(
@@ -212,7 +234,12 @@ async def save_draft(session_id: str, body: DraftIn, db: AsyncSession = Depends(
 # POST /reports/{session_id}/submit  — final submission, runs evaluator
 # ════════════════════════════════════════════════════════════════════════════
 @router.post("/{session_id}/submit", response_model=SubmissionResultOut)
-async def submit_report(session_id: str, body: DraftIn, db: AsyncSession = Depends(get_db)):
+async def submit_report(
+    session_id: str,
+    body: DraftIn,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
     """Submit the report — runs the evaluator and persists the score."""
     if body.report_type not in {"incident", "pentest"}:
         raise HTTPException(status_code=400, detail=f"Unknown report_type: {body.report_type}")
@@ -221,7 +248,7 @@ async def submit_report(session_id: str, body: DraftIn, db: AsyncSession = Depen
     if template is None:
         raise HTTPException(status_code=400, detail="Template not found")
 
-    session = await _get_session_or_404(session_id, db)
+    session = await verify_session_owner(db, session_id, current_user)
 
     # Pull session facts
     facts = await collect_session_facts(session_id, db)
