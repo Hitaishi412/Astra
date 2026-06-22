@@ -358,3 +358,8 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+# Security headers (wired in by fix_wire_security_headers.py)
+from security_headers import apply_to_flask
+apply_to_flask(app.server)        # Dash's underlying Flask app
