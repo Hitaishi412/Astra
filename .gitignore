@@ -21,3 +21,4 @@ apply_attacks_patch.py
 *.sqlite
 *.sqlite-journal
 apply_pentester_dashboard.py
+secrets/

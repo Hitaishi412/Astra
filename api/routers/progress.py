@@ -3,58 +3,44 @@ api/routers/progress.py
 ────────────────────────
 Progress endpoints — feeds the Progress page on the dashboard.
 
-Routes:
-    GET /progress/users                          — list users with completed sessions
-    GET /progress/{user_id}/summary              — top-level stats (totals, avgs)
-    GET /progress/{user_id}/trends               — score time series + mode breakdown
-    GET /progress/{user_id}/skills               — avg sub-scores across sessions
-    GET /progress/{user_id}/tactics              — per-tactic detection rates
-    GET /progress/{user_id}/activity             — last 30 days of session counts
+SECURITY: every route resolves the user from get_current_user (the
+Firebase token), NOT from a URL parameter. There is no {user_id} in any
+path — a caller can only ever read their own progress. This removes the
+IDOR class entirely (no object reference to tamper with) rather than
+guarding it. The old /progress/users directory endpoint was removed: it
+enumerated every user's id+username to any caller.
+
+Routes (all scoped to the authenticated user):
+    GET /progress/summary    — top-level stats
+    GET /progress/trends     — score time series + mode breakdown
+    GET /progress/skills     — avg sub-scores
+    GET /progress/tactics    — per-tactic detection rates
+    GET /progress/activity   — last 30 days of session counts
 """
 
 from __future__ import annotations
 
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
-from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.deps import get_db
+from api.firebase_auth import get_current_user
 from db.models import Score, Session as SessionModel, User
 
 router = APIRouter()
 
 
-# ════════════════════════════════════════════════════════════════════════════
-# /progress/users  — list of users
-# ════════════════════════════════════════════════════════════════════════════
-@router.get("/users")
-async def list_users(db: AsyncSession = Depends(get_db)):
-    """List users who have at least one scored session."""
-    stmt = (
-        select(User.id, User.username)
-        .join(SessionModel, SessionModel.user_id == User.id)
-        .join(Score, Score.session_id == SessionModel.id)
-        .distinct()
-    )
-    result = await db.execute(stmt)
-    users = [{"id": row.id, "username": row.username} for row in result.all()]
-    if not users:
-        # Fallback — return all users so the picker has at least one option
-        all_users = await db.execute(select(User.id, User.username))
-        users = [{"id": row.id, "username": row.username} for row in all_users.all()]
-    return users
-
-
-# ════════════════════════════════════════════════════════════════════════════
-# /progress/{user_id}/summary
-# ════════════════════════════════════════════════════════════════════════════
-@router.get("/{user_id}/summary")
-async def user_summary(user_id: str, db: AsyncSession = Depends(get_db)):
-    """Top-level stats for a user."""
+@router.get("/summary")
+async def user_summary(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Top-level stats for the authenticated user."""
+    user_id = current_user.id
     stmt = (
         select(Score)
         .join(SessionModel, SessionModel.id == Score.session_id)
@@ -83,12 +69,13 @@ async def user_summary(user_id: str, db: AsyncSession = Depends(get_db)):
     }
 
 
-# ════════════════════════════════════════════════════════════════════════════
-# /progress/{user_id}/trends
-# ════════════════════════════════════════════════════════════════════════════
-@router.get("/{user_id}/trends")
-async def user_trends(user_id: str, db: AsyncSession = Depends(get_db)):
+@router.get("/trends")
+async def user_trends(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
     """Score over time, with mode tag for each session."""
+    user_id = current_user.id
     stmt = (
         select(Score, SessionModel)
         .join(SessionModel, SessionModel.id == Score.session_id)
@@ -99,12 +86,10 @@ async def user_trends(user_id: str, db: AsyncSession = Depends(get_db)):
     result = await db.execute(stmt)
     rows = []
     for score, session in result.all():
-        # Try to read mode from session.metadata (or fallback to 'soc')
         mode = "soc"
         meta = getattr(session, "config", None)
         if isinstance(meta, dict):
             mode = meta.get("mode", "soc")
-
         rows.append({
             "session_id": session.id,
             "scenario": session.scenario_id,
@@ -117,12 +102,13 @@ async def user_trends(user_id: str, db: AsyncSession = Depends(get_db)):
     return rows
 
 
-# ════════════════════════════════════════════════════════════════════════════
-# /progress/{user_id}/skills  — avg sub-scores
-# ════════════════════════════════════════════════════════════════════════════
-@router.get("/{user_id}/skills")
-async def user_skills(user_id: str, db: AsyncSession = Depends(get_db)):
+@router.get("/skills")
+async def user_skills(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
     """Average of each sub-score across the user's sessions."""
+    user_id = current_user.id
     stmt = (
         select(Score)
         .join(SessionModel, SessionModel.id == Score.session_id)
@@ -145,12 +131,13 @@ async def user_skills(user_id: str, db: AsyncSession = Depends(get_db)):
     }
 
 
-# ════════════════════════════════════════════════════════════════════════════
-# /progress/{user_id}/tactics
-# ════════════════════════════════════════════════════════════════════════════
-@router.get("/{user_id}/tactics")
-async def user_tactics(user_id: str, db: AsyncSession = Depends(get_db)):
+@router.get("/tactics")
+async def user_tactics(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
     """Per-tactic detection rates aggregated across sessions."""
+    user_id = current_user.id
     stmt = (
         select(Score)
         .join(SessionModel, SessionModel.id == Score.session_id)
@@ -159,7 +146,6 @@ async def user_tactics(user_id: str, db: AsyncSession = Depends(get_db)):
     result = await db.execute(stmt)
     scores = result.scalars().all()
 
-    # Aggregate by-tactic from each score's details
     tactic_used: dict[str, int] = defaultdict(int)
     tactic_detected: dict[str, int] = defaultdict(int)
 
@@ -184,12 +170,13 @@ async def user_tactics(user_id: str, db: AsyncSession = Depends(get_db)):
     }
 
 
-# ════════════════════════════════════════════════════════════════════════════
-# /progress/{user_id}/activity
-# ════════════════════════════════════════════════════════════════════════════
-@router.get("/{user_id}/activity")
-async def user_activity(user_id: str, db: AsyncSession = Depends(get_db)):
+@router.get("/activity")
+async def user_activity(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
     """Sessions per day for the last 30 days, broken down by mode."""
+    user_id = current_user.id
     cutoff = datetime.now(timezone.utc) - timedelta(days=30)
     stmt = (
         select(Score, SessionModel)
@@ -199,7 +186,7 @@ async def user_activity(user_id: str, db: AsyncSession = Depends(get_db)):
     )
     result = await db.execute(stmt)
 
-    counts: dict[tuple[str, str], int] = defaultdict(int)  # (date, mode) -> count
+    counts: dict[tuple[str, str], int] = defaultdict(int)
     for score, session in result.all():
         if not score.created_at:
             continue
@@ -214,9 +201,7 @@ async def user_activity(user_id: str, db: AsyncSession = Depends(get_db)):
     ]
 
 
-# ─── Internal helpers (mirror scorer logic) ─────────────────────────────────
 def _mttd_to_score(mttd_sec: float) -> float:
-    """Lower MTTD = higher score. Mirrors scorer's _mttd_to_score."""
     if mttd_sec <= 0:
         return 100.0
     if mttd_sec <= 60:
@@ -229,7 +214,6 @@ def _mttd_to_score(mttd_sec: float) -> float:
 
 
 def _fp_to_score(fp_rate: float) -> float:
-    """Lower FP rate = higher score."""
     if fp_rate <= 0:
         return 100.0
     if fp_rate >= 0.5:

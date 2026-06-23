@@ -19,13 +19,14 @@ from typing import Any
 import httpx
 from dash import ALL, MATCH, Input, Output, State, ctx, html, no_update
 
+from dashboard.callbacks._auth import auth_headers
 logger = logging.getLogger("astra.dashboard.report_writer")
 
 
-def _safe_get(url: str, timeout: float = 4.0) -> Any:
+def _safe_get(url: str, timeout: float = 30.0, headers: dict | None = None) -> Any:
     try:
         with httpx.Client(timeout=timeout) as client:
-            r = client.get(url)
+            r = client.get(url, headers=headers or {})
             r.raise_for_status()
             return r.json()
     except Exception as e:
@@ -33,10 +34,10 @@ def _safe_get(url: str, timeout: float = 4.0) -> Any:
         return None
 
 
-def _safe_post(url: str, json: dict, timeout: float = 8.0) -> Any:
+def _safe_post(url: str, json: dict, timeout: float = 30.0, headers: dict | None = None) -> Any:
     try:
         with httpx.Client(timeout=timeout) as client:
-            r = client.post(url, json=json)
+            r = client.post(url, json=json, headers=headers or {})
             r.raise_for_status()
             return r.json()
     except Exception as e:
@@ -60,8 +61,9 @@ def register(app):
         Input("rw-session-id", "data"),
         Input("rw-report-type", "data"),
         State("api-base", "data"),
+        State("auth-token", "data"),
     )
-    def load_initial_data(session_id, report_type, api_base):
+    def load_initial_data(session_id, report_type, api_base, token):
         if not session_id or not report_type:
             return no_update, no_update, no_update, no_update
 
@@ -69,16 +71,16 @@ def register(app):
         # Map report_type to mode (incident -> any mode that uses it)
         # Just use mode=soc for incident, mode=pentester for pentest
         mode = "soc" if report_type == "incident" else "pentester"
-        templates = _safe_get(f"{api_base}/reports/templates/{mode}") or []
+        templates = _safe_get(f"{api_base}/reports/templates/{mode}", headers=auth_headers(token)) or []
         template = next((t for t in templates if t["id"] == report_type), None)
         if template is None:
             template = templates[0] if templates else {"id": report_type, "sections": []}
 
         # Fetch facts
-        facts = _safe_get(f"{api_base}/reports/{session_id}/facts") or {}
+        facts = _safe_get(f"{api_base}/reports/{session_id}/facts", headers=auth_headers(token)) or {}
 
         # Try to load existing draft
-        existing = _safe_get(f"{api_base}/reports/{session_id}/{report_type}")
+        existing = _safe_get(f"{api_base}/reports/{session_id}/{report_type}", headers=auth_headers(token))
         content = (existing or {}).get("content", {})
         submitted = (existing or {}).get("submitted", False)
 
@@ -206,8 +208,9 @@ def register(app):
         State("rw-report-type", "data"),
         State("rw-submitted", "data"),
         State("api-base", "data"),
+        State("auth-token", "data"),
     )
-    def autosave(n, values, ids, session_id, report_type, submitted, api_base):
+    def autosave(n, values, ids, session_id, report_type, submitted, api_base, token):
         if not session_id or not values or submitted:
             return no_update, no_update
         # Only save if there's any content
@@ -218,6 +221,7 @@ def register(app):
         result = _safe_post(
             f"{api_base}/reports/{session_id}/draft",
             json={"report_type": report_type, "content": content},
+            headers=auth_headers(token),
         )
         if result:
             return "Saved", "rw-status-value saved"
@@ -233,15 +237,17 @@ def register(app):
         State("rw-session-id", "data"),
         State("rw-report-type", "data"),
         State("api-base", "data"),
+        State("auth-token", "data"),
         prevent_initial_call=True,
     )
-    def save_draft(n_clicks, values, ids, session_id, report_type, api_base):
+    def save_draft(n_clicks, values, ids, session_id, report_type, api_base, token):
         if not n_clicks or not session_id:
             return no_update, no_update
         content = {sid["section"]: (val or "") for sid, val in zip(ids, values)}
         result = _safe_post(
             f"{api_base}/reports/{session_id}/draft",
             json={"report_type": report_type, "content": content},
+            headers=auth_headers(token),
         )
         if result:
             return "Draft saved", "rw-status-value saved"
@@ -261,15 +267,17 @@ def register(app):
         State("rw-session-id", "data"),
         State("rw-report-type", "data"),
         State("api-base", "data"),
+        State("auth-token", "data"),
         prevent_initial_call=True,
     )
-    def submit_report(n_clicks, values, ids, session_id, report_type, api_base):
+    def submit_report(n_clicks, values, ids, session_id, report_type, api_base, token):
         if not n_clicks or not session_id:
             return no_update, no_update, no_update, no_update, no_update, no_update
         content = {sid["section"]: (val or "") for sid, val in zip(ids, values)}
         result = _safe_post(
             f"{api_base}/reports/{session_id}/submit",
             json={"report_type": report_type, "content": content},
+            headers=auth_headers(token),
         )
         if not result:
             return no_update, no_update, "Submit failed", "rw-status-value error", no_update, no_update

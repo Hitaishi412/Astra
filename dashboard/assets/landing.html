@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ASTRA — Adversary Simulation Platform</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  /* surfaces */
+  --bg-base:#080809; --bg-elevated:#101013; --bg-card:#131318; --bg-card-hover:#181820;
+  --bg-input:#0c0c10; --bg-glass:rgba(16,16,19,0.65); --bg-glass-hover:rgba(20,20,26,0.75);
+  /* borders */
+  --border-hair:#1a1a22; --border-default:#25252e; --border-strong:#383843; --border-accent:rgba(212,255,94,0.35);
+  /* text */
+  --text-primary:#e6e6ea; --text-secondary:#95959e; --text-tertiary:#5d5d68; --text-disabled:#3a3a43;
+  /* accent */
+  --accent:#d4ff5e; --accent-bright:#e8ff8a; --accent-dim:#9bbf3d; --accent-glow:rgba(212,255,94,0.18); --accent-soft:rgba(212,255,94,0.08);
+  /* severity */
+  --severity-medium:#d9a13a; --severity-high:#de7a3a; --severity-critical:#e85a5a;
+  --status-good:#a3e87a; --status-pulse:#d4ff5e;
+  /* type */
+  --font-sans:'IBM Plex Sans',system-ui,sans-serif;
+  --font-mono:'IBM Plex Mono',ui-monospace,monospace;
+}
+
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  background:var(--bg-base); color:var(--text-primary);
+  font-family:var(--font-sans); line-height:1.55;
+  -webkit-font-smoothing:antialiased; overflow-x:hidden; position:relative;
+}
+
+/* ── atmosphere: glow, grid, grain ─────────────────────────────── */
+.bg-glow{
+  position:fixed; inset:0; z-index:0; pointer-events:none;
+  background:
+    radial-gradient(60rem 40rem at 50% -10%, var(--accent-soft), transparent 60%),
+    radial-gradient(50rem 50rem at 100% 10%, rgba(232,90,90,0.04), transparent 55%);
+}
+.bg-grid{
+  position:fixed; inset:0; z-index:0; pointer-events:none; opacity:.5;
+  background-image:
+    linear-gradient(var(--border-hair) 1px,transparent 1px),
+    linear-gradient(90deg,var(--border-hair) 1px,transparent 1px);
+  background-size:64px 64px;
+  -webkit-mask-image:radial-gradient(70rem 50rem at 50% 0%,#000 30%,transparent 75%);
+          mask-image:radial-gradient(70rem 50rem at 50% 0%,#000 30%,transparent 75%);
+}
+.grain{
+  position:fixed; inset:0; z-index:1; pointer-events:none; opacity:.4; mix-blend-mode:overlay;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+.wrap{position:relative; z-index:2; max-width:1180px; margin:0 auto; padding:0 28px}
+
+/* ── nav ───────────────────────────────────────────────────────── */
+nav{
+  position:sticky; top:0; z-index:50;
+  backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px);
+  background:linear-gradient(var(--bg-base),rgba(8,8,9,0.6));
+  border-bottom:1px solid var(--border-hair);
+}
+.nav-inner{display:flex; align-items:center; justify-content:space-between; height:64px}
+.brand{display:flex; align-items:center; gap:10px; font-weight:700; letter-spacing:.04em; font-size:18px}
+.brand .glyph{color:var(--accent); font-size:15px; transform:translateY(-1px)}
+.nav-links{display:flex; align-items:center; gap:30px}
+.nav-links a{
+  color:var(--text-secondary); text-decoration:none; font-family:var(--font-mono);
+  font-size:12.5px; letter-spacing:.04em; text-transform:uppercase; transition:color .18s;
+}
+.nav-links a:hover{color:var(--text-primary)}
+.nav-cta{
+  font-family:var(--font-mono); font-size:12.5px; text-transform:uppercase; letter-spacing:.06em;
+  color:var(--bg-base); background:var(--accent); padding:9px 18px; border-radius:6px;
+  text-decoration:none; font-weight:600; transition:transform .15s, box-shadow .2s;
+  box-shadow:0 0 0 rgba(212,255,94,0);
+}
+.nav-cta:hover{transform:translateY(-1px); box-shadow:0 6px 24px var(--accent-glow)}
+
+/* ── hero ──────────────────────────────────────────────────────── */
+.hero{padding:80px 0 60px; display:grid; grid-template-columns:1fr 1fr; gap:54px; align-items:center}
+@media(max-width:900px){.hero{grid-template-columns:1fr; gap:40px; padding:54px 0 40px}}
+.eyebrow{
+  font-family:var(--font-mono); font-size:12px; letter-spacing:.22em; text-transform:uppercase;
+  color:var(--accent-dim); display:inline-flex; align-items:center; gap:9px; margin-bottom:22px;
+}
+.eyebrow::before{content:""; width:22px; height:1px; background:var(--accent-dim)}
+h1{
+  font-size:clamp(40px,5.4vw,62px); line-height:1.02; font-weight:700; letter-spacing:-.02em;
+}
+h1 .hl{color:var(--accent); position:relative; white-space:nowrap}
+.lede{color:var(--text-secondary); font-size:17px; margin:24px 0 32px; max-width:46ch}
+.cta-row{display:flex; gap:14px; flex-wrap:wrap; align-items:center}
+.btn-primary{
+  font-family:var(--font-mono); font-size:13px; text-transform:uppercase; letter-spacing:.06em; font-weight:600;
+  background:var(--accent); color:var(--bg-base); padding:13px 24px; border-radius:7px; border:0;
+  text-decoration:none; cursor:pointer; transition:transform .15s, box-shadow .2s;
+}
+.btn-primary:hover{transform:translateY(-2px); box-shadow:0 10px 32px var(--accent-glow)}
+.btn-ghost{
+  font-family:var(--font-mono); font-size:13px; text-transform:uppercase; letter-spacing:.06em;
+  background:transparent; color:var(--text-primary); padding:13px 22px; border-radius:7px;
+  border:1px solid var(--border-strong); text-decoration:none; cursor:pointer; transition:border-color .2s, color .2s;
+  display:inline-flex; align-items:center; gap:9px;
+}
+.btn-ghost:hover{border-color:var(--border-accent); color:var(--accent)}
+.btn-ghost .dot{width:7px; height:7px; border-radius:50%; background:var(--status-good); box-shadow:0 0 8px var(--status-good)}
+.meta-line{
+  margin-top:30px; font-family:var(--font-mono); font-size:12px; color:var(--text-tertiary);
+  display:flex; gap:20px; flex-wrap:wrap;
+}
+.meta-line b{color:var(--text-secondary); font-weight:500}
+
+/* ── live console ──────────────────────────────────────────────── */
+.console{
+  background:var(--bg-glass); border:1px solid var(--border-default); border-radius:12px;
+  overflow:hidden; box-shadow:0 24px 70px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.02);
+  backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px);
+}
+.console-bar{
+  display:flex; align-items:center; gap:12px; padding:11px 15px;
+  border-bottom:1px solid var(--border-hair); background:rgba(8,8,9,.5);
+  font-family:var(--font-mono); font-size:11.5px; color:var(--text-tertiary);
+}
+.live{display:inline-flex; align-items:center; gap:7px; color:var(--accent); font-weight:500}
+.live .pulse{width:7px; height:7px; border-radius:50%; background:var(--accent); animation:pulse 1.6s infinite}
+@keyframes pulse{0%,100%{opacity:1; box-shadow:0 0 0 0 var(--accent-glow)}50%{opacity:.5; box-shadow:0 0 0 5px transparent}}
+.console-bar .sid{margin-left:auto}
+
+.kc{display:grid; grid-template-columns:repeat(7,1fr); gap:4px; padding:11px 12px; border-bottom:1px solid var(--border-hair)}
+.kc-cell{
+  text-align:center; padding:7px 2px; border-radius:5px; border:1px solid var(--border-hair);
+  font-family:var(--font-mono); font-size:8.5px; letter-spacing:.04em; text-transform:uppercase;
+  color:var(--text-tertiary); background:var(--bg-elevated); transition:all .4s; line-height:1.3;
+}
+.kc-cell .n{display:block; font-size:8px; color:var(--text-disabled); margin-bottom:2px}
+.kc-cell.active{
+  color:var(--bg-base); background:var(--accent); border-color:var(--accent);
+  box-shadow:0 0 16px var(--accent-glow);
+}
+.kc-cell.done{color:var(--accent-dim); border-color:var(--border-accent); background:var(--accent-soft)}
+
+.feed{height:248px; overflow:hidden; padding:8px 0; font-family:var(--font-mono); font-size:11.5px}
+.log{
+  display:grid; grid-template-columns:58px 64px 48px 1fr; gap:10px; padding:3px 15px;
+  color:var(--text-secondary); white-space:nowrap; opacity:0; transform:translateY(6px);
+  animation:logIn .35s forwards;
+}
+@keyframes logIn{to{opacity:1; transform:none}}
+.log .t{color:var(--text-disabled)}
+.log .src{color:var(--text-tertiary)}
+.log .lvl{font-weight:600}
+.log .lvl.info{color:var(--text-tertiary)}
+.log .lvl.warn{color:var(--severity-medium)}
+.log .lvl.alert{color:var(--severity-critical)}
+.log.is-alert{background:rgba(232,90,90,.05)}
+.log .msg{color:var(--text-secondary); overflow:hidden; text-overflow:ellipsis}
+
+.console-foot{
+  display:flex; gap:22px; padding:11px 15px; border-top:1px solid var(--border-hair);
+  background:rgba(8,8,9,.5); font-family:var(--font-mono); font-size:11px; color:var(--text-tertiary);
+}
+.stat b{color:var(--text-primary); font-weight:600; font-size:13px; margin-right:5px}
+.stat.score b{color:var(--accent)}
+.console-foot .up{color:var(--status-good); margin-left:auto}
+
+/* ── section scaffolding ───────────────────────────────────────── */
+section{padding:84px 0}
+.sec-head{max-width:62ch; margin-bottom:48px}
+.sec-eyebrow{
+  font-family:var(--font-mono); font-size:12px; letter-spacing:.2em; text-transform:uppercase;
+  color:var(--accent-dim); margin-bottom:16px;
+}
+.sec-head h2{font-size:clamp(28px,3.6vw,40px); line-height:1.1; letter-spacing:-.02em; font-weight:700}
+.sec-head p{color:var(--text-secondary); font-size:16px; margin-top:16px}
+
+/* ── two modes ─────────────────────────────────────────────────── */
+.modes{display:grid; grid-template-columns:1fr 1fr; gap:20px}
+@media(max-width:780px){.modes{grid-template-columns:1fr}}
+.mode{
+  position:relative; background:var(--bg-card); border:1px solid var(--border-default);
+  border-radius:12px; padding:30px; overflow:hidden; transition:transform .25s, border-color .25s;
+}
+.mode::before{content:""; position:absolute; left:0; top:0; bottom:0; width:3px}
+.mode.blue::before{background:#5aa9e8}
+.mode.red::before{background:var(--severity-critical)}
+.mode:hover{transform:translateY(-4px)}
+.mode.blue:hover{border-color:rgba(90,169,232,.4)}
+.mode.red:hover{border-color:rgba(232,90,90,.4)}
+.mode-tag{
+  font-family:var(--font-mono); font-size:11px; letter-spacing:.16em; text-transform:uppercase;
+  padding:5px 11px; border-radius:5px; display:inline-block; margin-bottom:18px;
+}
+.mode.blue .mode-tag{color:#9ccdf0; background:rgba(90,169,232,.1); border:1px solid rgba(90,169,232,.25)}
+.mode.red .mode-tag{color:#f0a0a0; background:rgba(232,90,90,.1); border:1px solid rgba(232,90,90,.25)}
+.mode h3{font-size:24px; font-weight:700; margin-bottom:6px}
+.mode .role{font-family:var(--font-mono); font-size:12px; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:.08em; margin-bottom:16px}
+.mode p{color:var(--text-secondary); font-size:14.5px}
+
+/* ── kill chain feature ────────────────────────────────────────── */
+.kcfeature{
+  display:grid; grid-template-columns:repeat(7,1fr); gap:8px; margin-top:8px;
+}
+@media(max-width:780px){.kcfeature{grid-template-columns:repeat(2,1fr)}}
+.kcf{
+  background:var(--bg-card); border:1px solid var(--border-default); border-radius:9px;
+  padding:18px 12px; text-align:center; position:relative;
+}
+.kcf .num{font-family:var(--font-mono); font-size:11px; color:var(--accent-dim); margin-bottom:8px}
+.kcf .ph{font-family:var(--font-mono); font-size:11.5px; text-transform:uppercase; letter-spacing:.05em; color:var(--text-secondary); line-height:1.4}
+
+/* ── features grid ─────────────────────────────────────────────── */
+.features{display:grid; grid-template-columns:repeat(2,1fr); gap:18px}
+@media(max-width:780px){.features{grid-template-columns:1fr}}
+.feature{
+  background:var(--bg-card); border:1px solid var(--border-default); border-radius:12px; padding:26px 28px;
+  transition:border-color .25s, background .25s;
+}
+.feature:hover{border-color:var(--border-strong); background:var(--bg-card-hover)}
+.feature .ico{
+  width:38px; height:38px; border-radius:9px; display:grid; place-items:center; margin-bottom:16px;
+  background:var(--accent-soft); border:1px solid var(--border-accent); color:var(--accent); font-family:var(--font-mono); font-size:16px;
+}
+.feature h4{font-size:17px; font-weight:600; margin-bottom:7px}
+.feature p{color:var(--text-secondary); font-size:14px}
+
+/* ── final cta ─────────────────────────────────────────────────── */
+.final{
+  text-align:center; background:var(--bg-elevated); border:1px solid var(--border-default);
+  border-radius:16px; padding:64px 32px; position:relative; overflow:hidden;
+}
+.final::after{content:""; position:absolute; inset:0; pointer-events:none;
+  background:radial-gradient(40rem 20rem at 50% 120%, var(--accent-soft), transparent 60%)}
+.final h2{font-size:clamp(30px,4vw,44px); font-weight:700; letter-spacing:-.02em; position:relative}
+.final p{color:var(--text-secondary); margin:16px auto 30px; max-width:48ch; position:relative}
+.final .cta-row{justify-content:center; position:relative}
+
+/* ── footer ────────────────────────────────────────────────────── */
+footer{border-top:1px solid var(--border-hair); padding:34px 0; margin-top:40px}
+.foot-inner{display:flex; justify-content:space-between; align-items:center; gap:20px; flex-wrap:wrap}
+.foot-inner .prompt{font-family:var(--font-mono); font-size:12.5px; color:var(--text-tertiary)}
+.foot-inner .prompt .c{color:var(--accent)}
+.foot-inner .cursor{display:inline-block; width:7px; height:14px; background:var(--accent); margin-left:2px; transform:translateY(2px); animation:blink 1.1s steps(2) infinite}
+@keyframes blink{0%,50%{opacity:1}51%,100%{opacity:0}}
+.foot-links{display:flex; gap:22px}
+.foot-links a{color:var(--text-tertiary); font-family:var(--font-mono); font-size:12px; text-decoration:none; transition:color .18s}
+.foot-links a:hover{color:var(--text-secondary)}
+
+/* ── reveal on scroll ──────────────────────────────────────────── */
+.reveal{opacity:0; transform:translateY(20px); transition:opacity .7s cubic-bezier(.2,.7,.2,1), transform .7s cubic-bezier(.2,.7,.2,1)}
+.reveal.in{opacity:1; transform:none}
+</style>
+</head>
+<body>
+<div class="bg-glow"></div>
+<div class="bg-grid"></div>
+<div class="grain"></div>
+
+<nav>
+  <div class="wrap nav-inner">
+    <div class="brand"><span class="glyph">▲</span> ASTRA</div>
+    <div class="nav-links">
+      <a href="#modes">Modes</a>
+      <a href="#killchain">Kill Chain</a>
+      <a href="#features">Features</a>
+      <a href="/signin" onclick="window.top.location.href='/signin';return false;" style="color:var(--text-primary)">Sign In</a>
+      <a href="/signin" onclick="window.top.location.href='/signin';return false;" class="nav-cta">Get Started</a>
+    </div>
+  </div>
+</nav>
+
+<header class="wrap hero">
+  <div class="hero-copy">
+    <div class="eyebrow">Adversary Simulation Platform</div>
+    <h1>Defend the network.<br>Or <span class="hl">breach it.</span></h1>
+    <p class="lede">ASTRA drops you into multi-stage attack scenarios scored against MITRE ATT&CK. Hunt threats in a live log stream as the SOC analyst — or plan the intrusion as the operator. Real kill chains, real scoring, no homelab required.</p>
+    <div class="cta-row">
+      <a href="/signin" onclick="window.top.location.href='/signin';return false;" class="btn-primary">Start training →</a>
+      <a href="/signin" onclick="window.top.location.href='/signin';return false;" class="btn-ghost"><span class="dot"></span> Watch a live session</a>
+    </div>
+    <div class="meta-line">
+      <span><b>8</b> attack scenarios</span>
+      <span><b>2</b> training modes</span>
+      <span><b>MITRE ATT&CK</b> scored</span>
+    </div>
+  </div>
+
+  <div class="console" id="console">
+    <div class="console-bar">
+      <span class="live"><span class="pulse"></span>LIVE</span>
+      <span>ransomware / medium</span>
+      <span class="sid">session a4f9c2e1</span>
+    </div>
+    <div class="kc" id="kc"></div>
+    <div class="feed" id="feed"></div>
+    <div class="console-foot">
+      <span class="stat"><b id="s-events">0</b>events</span>
+      <span class="stat"><b id="s-alerts">0</b>alerts</span>
+      <span class="stat"><b id="s-cov">0%</b>coverage</span>
+      <span class="stat score"><b id="s-score">0</b>score</span>
+      <span class="up" id="s-trend">▲ live</span>
+    </div>
+  </div>
+</header>
+
+<section id="modes">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <div class="sec-eyebrow">Two sides of every breach</div>
+      <h2>Pick a side. Learn the whole fight.</h2>
+      <p>The same attack scenario, experienced from both ends of the keyboard. Switch modes to build a complete security mindset — not just one half of it.</p>
+    </div>
+    <div class="modes">
+      <div class="mode blue reveal">
+        <span class="mode-tag">Defend the network</span>
+        <h3>SOC Analyst</h3>
+        <div class="role">Blue team · detection &amp; response</div>
+        <p>Triage a live stream of logs and alerts as a multi-stage attack unfolds in real time. Catch the kill chain before impact, mark true and false positives, and write up what happened. Scored on detection coverage, speed, and accuracy.</p>
+      </div>
+      <div class="mode red reveal">
+        <span class="mode-tag">Breach the target</span>
+        <h3>Pentester</h3>
+        <div class="role">Red team · planning &amp; execution</div>
+        <p>Plan and execute a multi-phase intrusion against a defended target. Manage your stealth budget, time, and lives. Every move you make rolls against the blue team's defenses — and the SOC is watching the logs.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="killchain">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <div class="sec-eyebrow">The kill chain</div>
+      <h2>Seven phases. One chain. Watch it move.</h2>
+      <p>Every scenario maps to the attack kill chain. As the engagement runs, you see exactly which phase the adversary reached — and the score tells you precisely where you caught them, or got caught.</p>
+    </div>
+    <div class="kcfeature reveal">
+      <div class="kcf"><div class="num">01</div><div class="ph">Recon</div></div>
+      <div class="kcf"><div class="num">02</div><div class="ph">Initial Access</div></div>
+      <div class="kcf"><div class="num">03</div><div class="ph">Execution</div></div>
+      <div class="kcf"><div class="num">04</div><div class="ph">Persistence</div></div>
+      <div class="kcf"><div class="num">05</div><div class="ph">Lateral Movement</div></div>
+      <div class="kcf"><div class="num">06</div><div class="ph">Exfiltration</div></div>
+      <div class="kcf"><div class="num">07</div><div class="ph">Impact</div></div>
+    </div>
+  </div>
+</section>
+
+<section id="features">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <div class="sec-eyebrow">What's inside</div>
+      <h2>Instrumented end to end.</h2>
+    </div>
+    <div class="features">
+      <div class="feature reveal">
+        <div class="ico">⊹</div>
+        <h4>MITRE ATT&CK scoring</h4>
+        <p>Detection coverage is measured technique by technique against the ATT&CK matrix — so your score reflects real defensive depth, not a single number.</p>
+      </div>
+      <div class="feature reveal">
+        <div class="ico">≋</div>
+        <h4>Live event streaming</h4>
+        <p>Logs and alerts arrive in real time as the attack progresses. Triage them as they land, just like a real SOC console under pressure.</p>
+      </div>
+      <div class="feature reveal">
+        <div class="ico">✎</div>
+        <h4>Structured reporting</h4>
+        <p>Write the incident or engagement report when the dust settles. A rule-based evaluator scores it across five dimensions and gives you feedback.</p>
+      </div>
+      <div class="feature reveal">
+        <div class="ico">▦</div>
+        <h4>Leaderboard</h4>
+        <p>Every run is ranked. Track your progress over time and measure yourself against every other operator who's stepped into the range.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <div class="final reveal">
+      <h2>Step into the range.</h2>
+      <p>Create an account and run your first scenario in under a minute. Free, browser-based, no setup.</p>
+      <div class="cta-row">
+        <a href="/signin" onclick="window.top.location.href='/signin';return false;" class="btn-primary">Get started →</a>
+        <a href="#modes" class="btn-ghost">Explore the modes</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap foot-inner">
+    <div class="prompt"><span class="c">astra</span>@range:~$ ./train --mode soc<span class="cursor"></span></div>
+    <div class="foot-links">
+      <a href="https://github.com/aqueel707/Astra_integration" target="_blank" rel="noopener">GitHub</a>
+      <a href="#modes">Modes</a>
+      <a href="#features">Features</a>
+      <a href="#">Docs</a>
+    </div>
+  </div>
+</footer>
+
+<script>
+// ── scroll reveal ────────────────────────────────────────────────
+const io=new IntersectionObserver((es)=>{es.forEach(e=>{if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target)}})},{threshold:.15});
+document.querySelectorAll('.reveal').forEach(el=>io.observe(el));
+
+// ── live console simulation ──────────────────────────────────────
+const PHASES=[['01','Recon'],['02','Initial Access'],['03','Execution'],['04','Persistence'],['05','Lateral Move'],['06','Exfil'],['07','Impact']];
+const kc=document.getElementById('kc');
+PHASES.forEach(([n,name])=>{
+  const c=document.createElement('div'); c.className='kc-cell';
+  c.innerHTML=`<span class="n">${n}</span>${name}`; kc.appendChild(c);
+});
+const cells=[...kc.children];
+
+const LOGS=[
+  ['auth','info','user logon svc_backup @ WS-CFO-01'],
+  ['email','warn','attachment opened: invoice_q4.xlsm'],
+  ['edr','alert','macro spawned powershell -enc …'],
+  ['proc','warn','powershell → rundll32 child proc'],
+  ['net','info','dns lookup cdn-share[.]net'],
+  ['net','alert','beacon 10.1.5.42 → 185.x.x.x:443'],
+  ['edr','alert','lsass handle requested by ps1'],
+  ['auth','warn','svc_backup → admin token reuse'],
+  ['file','info','smb copy \\\\WS-CFO-01\\C$\\temp'],
+  ['net','warn','lateral rdp WS-CFO-01 → DC-01'],
+  ['edr','alert','shadow copy delete vssadmin'],
+  ['file','alert','mass rename *.locked on share'],
+];
+const feed=document.getElementById('feed');
+let i=0, events=0, alerts=0, cov=0, score=0, phase=-1;
+const el=id=>document.getElementById(id);
+function tick(){
+  if(i>=LOGS.length){ // brief pause, then reset for loop
+    setTimeout(()=>{feed.innerHTML='';i=0;events=0;alerts=0;cov=0;score=0;phase=-1;
+      cells.forEach(c=>c.className='kc-cell');
+      el('s-events').textContent='0';el('s-alerts').textContent='0';el('s-cov').textContent='0%';el('s-score').textContent='0';
+    },2200); return;
+  }
+  const [src,lvl,msg]=LOGS[i];
+  const ts=`08:${String(42+Math.floor(i/3)).padStart(2,'0')}:${String((i*7)%60).padStart(2,'0')}`;
+  const row=document.createElement('div');
+  row.className='log'+(lvl==='alert'?' is-alert':'');
+  row.innerHTML=`<span class="t">${ts}</span><span class="src">${src}</span><span class="lvl ${lvl}">${lvl.toUpperCase()}</span><span class="msg">${msg}</span>`;
+  feed.appendChild(row);
+  feed.scrollTop=feed.scrollHeight;
+  while(feed.children.length>9) feed.removeChild(feed.firstChild);
+
+  events++;
+  if(lvl==='alert'){alerts++; cov=Math.min(100,cov+11); score=Math.min(99,score+9);}
+  else if(lvl==='warn'){cov=Math.min(100,cov+4); score=Math.min(99,score+4);}
+  // advance kill chain roughly every ~2 logs
+  const np=Math.min(PHASES.length-1,Math.floor(i/1.8));
+  if(np!==phase){
+    if(phase>=0&&cells[phase]) cells[phase].className='kc-cell done';
+    phase=np; if(cells[phase]) cells[phase].className='kc-cell active';
+  }
+  el('s-events').textContent=events;
+  el('s-alerts').textContent=alerts;
+  el('s-cov').textContent=cov+'%';
+  el('s-score').textContent=score;
+  i++;
+}
+setInterval(tick, 900);
+tick();
+</script>
+</body>
+</html>

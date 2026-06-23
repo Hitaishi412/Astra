@@ -855,3 +855,370 @@ a:hover { color: var(--accent-bright); }
     font-family: var(--font-mono);
     font-size: 11px;
 }
+/* ─── Login gate (Phase 1 auth) ─────────────────────────────────────────────
+   Appended to dashboard/assets/astra.css. Scoped under .login-* so it can't
+   collide with existing dashboard styles. */
+
+.login-page {
+  min-height: 80vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+}
+
+.login-card {
+  width: 100%;
+  max-width: 360px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  padding: 2rem 1.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.login-brand {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 1.6rem;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-align: center;
+}
+
+.login-subtitle {
+  text-align: center;
+  font-size: 0.85rem;
+  opacity: 0.6;
+  margin-bottom: 0.5rem;
+}
+
+.login-input {
+  width: 100%;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.25);
+  color: inherit;
+  font-size: 0.95rem;
+  font-family: inherit;
+}
+
+.login-input:focus {
+  outline: none;
+  border-color: rgba(255, 255, 255, 0.35);
+}
+
+.login-btn {
+  width: 100%;
+  padding: 0.7rem 0.85rem;
+  border: none;
+  border-radius: 6px;
+  background: #2f6fde;
+  color: #fff;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.login-btn:hover {
+  background: #2961c6;
+}
+
+.login-error {
+  min-height: 1.2rem;
+  font-size: 0.85rem;
+  color: #e2706f;
+  text-align: center;
+}
+/* ─── Auth gate — dark cyber / terminal (Phase 1) ───────────────────────────
+   Appended to dashboard/assets/astra.css. All selectors scoped under
+   .auth-* so they can't collide with existing dashboard styles. */
+
+.auth-page {
+  min-height: 86vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.25rem;
+  padding: 2rem;
+  position: relative;
+}
+
+/* faint grid backdrop — terminal feel without a heavy image */
+.auth-page::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(120, 200, 255, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(120, 200, 255, 0.035) 1px, transparent 1px);
+  background-size: 38px 38px;
+  pointer-events: none;
+  mask-image: radial-gradient(ellipse at center, #000 35%, transparent 75%);
+}
+
+.auth-card {
+  position: relative;
+  width: 100%;
+  max-width: 380px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  padding: 2.25rem 2rem 2rem;
+  background: rgba(8, 12, 18, 0.72);
+  border: 1px solid rgba(120, 200, 255, 0.14);
+  border-radius: 4px;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.4),
+              0 18px 50px -20px rgba(0, 0, 0, 0.8);
+}
+
+/* top accent hairline */
+.auth-card::before {
+  content: "";
+  position: absolute;
+  left: 0; right: 0; top: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, #3c9dff 50%, transparent);
+  opacity: 0.7;
+}
+
+.auth-brand-wrap {
+  text-align: center;
+  margin-bottom: 0.4rem;
+  line-height: 1.1;
+}
+
+.auth-brand {
+  display: block;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 1.85rem;
+  font-weight: 600;
+  letter-spacing: 0.34em;
+  color: #eaf2fb;
+  text-indent: 0.34em;
+}
+
+.auth-brand-sub {
+  display: block;
+  margin-top: 0.45rem;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.62rem;
+  letter-spacing: 0.42em;
+  color: #5d7187;
+  text-indent: 0.42em;
+}
+
+.auth-tabs {
+  display: flex;
+  gap: 0;
+  margin: 0.4rem 0 0.35rem;
+  border: 1px solid rgba(120, 200, 255, 0.14);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.auth-tab {
+  flex: 1;
+  padding: 0.55rem 0.5rem;
+  background: transparent;
+  border: none;
+  color: #6f8295;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.72rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.auth-tab:hover { color: #c7d6e6; }
+
+.auth-tab.is-active {
+  background: rgba(60, 157, 255, 0.14);
+  color: #eaf2fb;
+}
+
+.auth-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-top: 0.35rem;
+}
+
+.auth-input {
+  width: 100%;
+  padding: 0.72rem 0.85rem;
+  background: rgba(0, 0, 0, 0.45);
+  border: 1px solid rgba(120, 200, 255, 0.16);
+  border-radius: 3px;
+  color: #e7eef6;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.9rem;
+  letter-spacing: 0.02em;
+}
+
+.auth-input::placeholder { color: #4f6275; }
+
+.auth-input:focus {
+  outline: none;
+  border-color: #3c9dff;
+  box-shadow: 0 0 0 1px rgba(60, 157, 255, 0.4);
+}
+
+.auth-btn {
+  width: 100%;
+  margin-top: 0.15rem;
+  padding: 0.74rem 0.85rem;
+  background: #2f6fde;
+  border: 1px solid #3c9dff;
+  border-radius: 3px;
+  color: #fff;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.82rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.05s;
+}
+
+.auth-btn:hover { background: #356fd0; }
+.auth-btn:active { transform: translateY(1px); }
+
+.auth-error {
+  min-height: 1.15rem;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.76rem;
+  color: #e8736f;
+  text-align: center;
+  letter-spacing: 0.02em;
+}
+
+.auth-foot {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.62rem;
+  letter-spacing: 0.34em;
+  color: #3f4f60;
+}
+
+/* Logout button in navbar */
+.astra-nav-logout {
+  padding: 6px 12px;
+  background: transparent;
+  border: 1px solid rgba(120, 200, 255, 0.2);
+  border-radius: 3px;
+  color: #8f9fb0;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 12px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: all 0.15s;
+  margin-left: auto;
+}
+.astra-nav-logout:hover {
+  border-color: rgba(120, 200, 255, 0.4);
+  color: #c7d6e6;
+}
+.astra-nav-logout:active {
+  transform: translateY(1px);
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   AUTH PAGE RE-THEME — acid-green to match the landing.
+   Appended last so these override the original blue .auth-* rules above.
+   ════════════════════════════════════════════════════════════════════════ */
+
+/* atmospheric background: radial accent glow + brighter grid (landing feel) */
+.auth-page::before {
+  background-image:
+    radial-gradient(48rem 32rem at 50% -8%, var(--accent-soft), transparent 60%),
+    linear-gradient(var(--border-hair) 1px, transparent 1px),
+    linear-gradient(90deg, var(--border-hair) 1px, transparent 1px);
+  background-size: auto, 56px 56px, 56px 56px;
+  mask-image: radial-gradient(ellipse 60% 70% at center, #000 30%, transparent 78%);
+  -webkit-mask-image: radial-gradient(ellipse 60% 70% at center, #000 30%, transparent 78%);
+}
+
+/* glass card matching the landing console */
+.auth-card {
+  background: var(--bg-glass);
+  border: 1px solid var(--border-default);
+  border-radius: 12px;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.55),
+              inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+/* top accent hairline → acid-green */
+.auth-card::before {
+  background: linear-gradient(90deg, transparent, var(--accent) 50%, transparent);
+  opacity: 0.8;
+}
+
+/* brand wordmark */
+.auth-brand { color: var(--text-primary); }
+.auth-brand-sub { color: var(--accent-dim); }
+
+/* tab group */
+.auth-tabs { border: 1px solid var(--border-default); border-radius: 7px; }
+.auth-tab { color: var(--text-tertiary); }
+.auth-tab:hover { color: var(--text-primary); }
+.auth-tab.is-active {
+  background: var(--accent-soft);
+  color: var(--accent-bright);
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+/* inputs */
+.auth-input {
+  background: var(--bg-input);
+  border: 1px solid var(--border-default);
+  border-radius: 7px;
+  color: var(--text-primary);
+}
+.auth-input::placeholder { color: var(--text-tertiary); }
+.auth-input:focus {
+  border-color: var(--border-accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+/* primary button → acid-green with dark text + glow on hover */
+.auth-btn {
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 7px;
+  color: var(--bg-base);
+  transition: transform 0.15s, box-shadow 0.2s, background 0.15s;
+}
+.auth-btn:hover {
+  background: var(--accent-bright);
+  box-shadow: 0 8px 28px var(--accent-glow);
+}
+.auth-btn:active { transform: translateY(1px); }
+
+/* error + footer */
+.auth-error { color: var(--severity-critical); }
+.auth-foot { color: var(--text-tertiary); letter-spacing: 0.34em; }
+
+/* ── Leaderboard grade badge: contain so it never overflows its column ── */
+.score-grade {
+  display: inline-block;
+  box-sizing: border-box;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;          /* was 16px — too wide for the 120px column */
+  letter-spacing: 0.04em;
+  padding: 4px 10px;
+  text-transform: none;     /* humanized label already cased in the renderer */
+  text-align: center;
+}
+/* Leaderboard coverage % was near-invisible — lift contrast */
+.log-row .log-host:last-child { color: var(--text-secondary); }

@@ -4,9 +4,18 @@ dashboard/callbacks/progress.py
 Callbacks for the Progress page.
 
 Flow:
-  1. On page load → /progress/users populates user picker
-  2. User selected → fire 5 parallel API calls → store data in dcc.Store
-  3. Store data → render summary stats + 4 charts
+  1. On page load → progress data is fetched for the AUTHENTICATED user
+     (the server resolves identity from the Firebase token; there is no
+     user_id in the URL anymore — see api/routers/progress.py).
+  2. Data stored in dcc.Store → renders summary stats + 4 charts.
+
+SECURITY NOTE: the old /progress/users user-directory endpoint and the
+/progress/{user_id}/... routes were removed (IDOR + user enumeration).
+The picker is kept as a single static "Me" entry only so the existing
+layout component stays valid; it no longer selects between users.
+
+Auth: API calls carry the Firebase token via _auth.auth_headers +
+State("auth-token","data"). Render callbacks make no API calls.
 """
 
 from __future__ import annotations
@@ -17,6 +26,7 @@ from typing import Any
 import httpx
 from dash import Input, Output, State, no_update
 
+from dashboard.callbacks._auth import auth_headers
 from dashboard.components.charts import (
     activity_calendar_chart,
     empty_chart,
@@ -29,10 +39,10 @@ from dashboard.components.charts import (
 logger = logging.getLogger("astra.dashboard.progress")
 
 
-def _fetch(url: str, timeout: float = 4.0) -> Any:
+def _fetch(url: str, timeout: float = 4.0, headers: dict | None = None) -> Any:
     try:
         with httpx.Client(timeout=timeout) as client:
-            r = client.get(url)
+            r = client.get(url, headers=headers or {})
             r.raise_for_status()
             return r.json()
     except Exception as e:
@@ -43,39 +53,40 @@ def _fetch(url: str, timeout: float = 4.0) -> Any:
 def register(app):
     """Register all progress page callbacks."""
 
-    # ── User picker population (on page load) ────────────────────────────
+    # ── Picker is now a no-op single entry ───────────────────────────────
+    # The user-directory endpoint was removed for security. Progress is
+    # always the authenticated user. We keep one static option so the
+    # layout's picker component stays valid and fetch_progress has a
+    # trigger value.
     @app.callback(
         Output("progress-user-picker", "options"),
         Output("progress-user-picker", "value"),
         Input("url", "pathname"),
-        State("api-base", "data"),
     )
-    def populate_user_picker(pathname, api_base):
+    def populate_user_picker(pathname):
         if not pathname or not pathname.startswith("/progress"):
             return no_update, no_update
-        users = _fetch(f"{api_base}/progress/users") or []
-        if not users:
-            return [], None
-        options = [{"label": u["username"], "value": u["id"]} for u in users]
-        # Default to first user
-        return options, users[0]["id"]
+        return [{"label": "Me", "value": "me"}], "me"
 
-    # ── Fetch all progress data when user changes ────────────────────────
+    # ── Fetch all progress data for the authenticated user ───────────────
     @app.callback(
         Output("progress-data-store", "data"),
         Input("progress-user-picker", "value"),
         Input("progress-tick", "n_intervals"),
         State("api-base", "data"),
+        State("auth-token", "data"),
     )
-    def fetch_progress(user_id, _n, api_base):
-        if not user_id:
+    def fetch_progress(_picker, _n, api_base, token):
+        # Identity comes from the token server-side, not from the picker.
+        if not token:
             return {}
+        h = auth_headers(token)
         return {
-            "summary":  _fetch(f"{api_base}/progress/{user_id}/summary")  or {},
-            "trends":   _fetch(f"{api_base}/progress/{user_id}/trends")   or [],
-            "skills":   _fetch(f"{api_base}/progress/{user_id}/skills")   or {},
-            "tactics":  _fetch(f"{api_base}/progress/{user_id}/tactics")  or {},
-            "activity": _fetch(f"{api_base}/progress/{user_id}/activity") or [],
+            "summary":  _fetch(f"{api_base}/progress/summary",  headers=h) or {},
+            "trends":   _fetch(f"{api_base}/progress/trends",   headers=h) or [],
+            "skills":   _fetch(f"{api_base}/progress/skills",   headers=h) or {},
+            "tactics":  _fetch(f"{api_base}/progress/tactics",  headers=h) or {},
+            "activity": _fetch(f"{api_base}/progress/activity", headers=h) or [],
         }
 
     # ── Render summary stat blocks ───────────────────────────────────────
@@ -104,34 +115,33 @@ def register(app):
     )
     def render_trend(data):
         if not data:
-            return empty_chart("Select a user")
+            return empty_chart("No data yet")
         trends = data.get("trends") or []
-        # Map to the shape charts.py expects
         rows = [
             {"date": t.get("date", ""), "score": t.get("score", 0), "mode": t.get("mode", "soc")}
             for t in trends
         ]
         return score_trend_chart(rows)
 
-    # ── Render skills radar ──────────────────────────────────────────────
+    # ── Render skills radar ─────────────────────────────────────────────
     @app.callback(
         Output("progress-chart-radar", "figure"),
         Input("progress-data-store", "data"),
     )
     def render_radar(data):
         if not data:
-            return empty_chart("Select a user")
+            return empty_chart("No data yet")
         skills = data.get("skills") or {}
         return skills_radar_chart(skills)
 
-    # ── Render tactic heatmap ────────────────────────────────────────────
+    # ── Render tactic heatmap ─────────────────────────────────────────
     @app.callback(
         Output("progress-chart-heatmap", "figure"),
         Input("progress-data-store", "data"),
     )
     def render_heatmap(data):
         if not data:
-            return empty_chart("Select a user")
+            return empty_chart("No data yet")
         tactics = data.get("tactics") or {}
         return tactic_heatmap_chart(tactics)
 
@@ -142,6 +152,6 @@ def register(app):
     )
     def render_activity(data):
         if not data:
-            return empty_chart("Select a user")
+            return empty_chart("No data yet")
         activity = data.get("activity") or []
         return activity_calendar_chart(activity)

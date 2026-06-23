@@ -51,15 +51,15 @@ class Settings(BaseSettings):
 
     # App
     app_name: str = "ASTRA"
-    app_env: str = "development"
+    app_env: str = "production"
     version: str = "0.1.0"
-    debug: bool = True
+    debug: bool = False
 
     # Server
     api_host: str = "0.0.0.0"
     api_port: int = 8000
     dashboard_port: int = 8050
-    reload: bool = True
+    reload: bool = False
 
     # Database
     database_url: str = "sqlite+aiosqlite:///./astra.db"

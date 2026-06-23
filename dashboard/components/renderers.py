@@ -308,7 +308,7 @@ def render_leaderboard_row(entry: dict[str, Any]) -> html.Div:
             html.Span(entry.get("username", "—"), className="log-message"),
             html.Span(entry.get("scenario_id", "—"), className="log-host"),
             html.Span(f"{entry.get('total_score', 0):.1f}", className="log-severity high"),
-            html.Span(grade.upper(), className=f"score-grade {grade.lower()}"),
+            html.Span(grade.replace("_", " ").title(), className=f"score-grade {grade.lower()}"),
             html.Span(f"{entry.get('mitre_coverage_pct', 0):.0f}%", className="log-host"),
         ],
         className="log-row",

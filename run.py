@@ -1,3 +1,4 @@
+from dotenv import load_dotenv; load_dotenv()
 """
 ASTRA — Single entry point.
 Starts the FastAPI API server.

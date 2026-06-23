@@ -1,0 +1,70 @@
+# ─── render.yaml ────────────────────────────────────────────────────────
+# Render Infrastructure-as-Code config for ASTRA Cyber Range.
+#
+# Two services, both deployed from the same repo on every git push:
+#   - astra-api        FastAPI on port 8000  (data + auth backend)
+#   - astra-dashboard  Dash on port 8050     (the UI users see)
+#
+# The dashboard talks to the API over its public Render URL (ASTRA_API_BASE).
+# Users only ever visit the dashboard URL; the API is just an HTTPS endpoint.
+#
+# Secrets (DATABASE_URL, FIREBASE_SERVICE_ACCOUNT_B64) are NOT in this file.
+# Set them manually in the Render dashboard for each service — see the
+# README section "Deploying to Render" for the exact list.
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+  # ── FastAPI backend ──────────────────────────────────────────────────────
+  - type: web
+    name: astra-api
+    runtime: python
+    plan: free
+    region: singapore           # closest free region to ap-northeast-1 Supabase
+    branch: main
+    rootDir: .
+    buildCommand: pip install -r requirements.txt
+    # Render injects $PORT; uvicorn binds to it. We do NOT pass --seed in
+    # production — seeding runs once locally and is idempotent in the DB.
+    startCommand: python run.py --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: FIREBASE_ENABLED
+        value: "true"
+      - key: FIREBASE_PROJECT_ID
+        value: astra-cyber
+      # The two real secrets — set these in the Render dashboard, not here.
+      - key: DATABASE_URL
+        sync: false
+      - key: FIREBASE_SERVICE_ACCOUNT_B64
+        sync: false
+
+  # ── Dash dashboard ───────────────────────────────────────────────────────
+  - type: web
+    name: astra-dashboard
+    runtime: python
+    plan: free
+    region: singapore
+    branch: main
+    rootDir: .
+    buildCommand: pip install -r requirements.txt
+    # Dash listens on the port Render gives it. The dashboard's run.py uses
+    # ASTRA_DASHBOARD_PORT, which we wire from $PORT below.
+    startCommand: ASTRA_DASHBOARD_PORT=$PORT python run_dashboard.py
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      # Point the dashboard at the API service's public URL. Render resolves
+      # `fromService` at build time, so this stays correct if URLs change.
+      - key: ASTRA_API_BASE
+        fromService:
+          type: web
+          name: astra-api
+          property: host
+      # Same Firebase env vars as the API (dashboard reads FIREBASE_ENABLED
+      # for any client-side branching, and the project ID for diagnostics).
+      - key: FIREBASE_ENABLED
+        value: "true"
+      - key: FIREBASE_PROJECT_ID
+        value: astra-cyber

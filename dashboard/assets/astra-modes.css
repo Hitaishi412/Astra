@@ -480,3 +480,38 @@
     border-radius: var(--radius-sm);
     background: transparent;
 }
+
+/* ════════════════════════════════════════════════════════════════════════
+   PICKER POLISH — unify with the landing (SOC→blue, atmosphere, punchier head)
+   Appended last; overrides the rules above via the cascade.
+   ════════════════════════════════════════════════════════════════════════ */
+
+/* Per-mode accents matching the landing: SOC blue, Pentester red, Purple purple */
+.mode-card-soc       { --mode-accent: #5aa9e8; --mode-glow: rgba(90, 169, 232, 0.16); }
+.mode-card-pentester { --mode-accent: #e85a5a; --mode-glow: rgba(232, 90, 90, 0.16); }
+.mode-card-purple    { --mode-accent: #c490ff; --mode-glow: rgba(196, 144, 255, 0.18); }
+
+/* Atmospheric backdrop — grid + radial glow, same as landing & auth */
+.mode-picker-page { position: relative; }
+.mode-picker-page::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image:
+    radial-gradient(60rem 40rem at 50% -6%, var(--accent-soft), transparent 60%),
+    linear-gradient(var(--border-hair) 1px, transparent 1px),
+    linear-gradient(90deg, var(--border-hair) 1px, transparent 1px);
+  background-size: auto, 64px 64px, 64px 64px;
+  mask-image: radial-gradient(72rem 52rem at 50% 0%, #000 28%, transparent 76%);
+  -webkit-mask-image: radial-gradient(72rem 52rem at 50% 0%, #000 28%, transparent 76%);
+}
+/* keep header + grid above the backdrop */
+.mode-picker-page > * { position: relative; z-index: 1; }
+
+/* Punchier heading to match the landing's section heads (was weight 300) */
+.picker-heading { font-weight: 700; letter-spacing: -0.02em; }
+
+/* Faint top-edge highlight so cards read dimensional even at rest */
+.mode-card { box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025); }

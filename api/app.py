@@ -60,13 +60,24 @@ def create_app() -> FastAPI:
     )
 
     # CORS — allow dashboard to call API
+    # CORS — restrict to the dashboard origin(s). Auth is a bearer token in a
+    # header (not cookies), so credentialed CORS isn't needed — and
+    # allow_origins=["*"] with allow_credentials=True is invalid anyway.
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],  # Tighten in production
-        allow_credentials=True,
+        allow_origins=[
+            "https://astra-dashboard-qu4c.onrender.com",
+            "http://localhost:8050",
+            "http://127.0.0.1:8050",
+        ],
+        allow_credentials=False,
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    # Security headers — common headers + strict CSP for the JSON API
+    from security_headers import apply_to_fastapi
+    apply_to_fastapi(app)
 
     # Register routers
     _register_routers(app)

@@ -1,23 +1,43 @@
-faker==30.8.2
-pydantic==2.9.2
-pydantic-settings==2.6.1
-redis==5.2.0
+# ── Web framework ─────────────────────────────────────────────────────────
 fastapi==0.115.5
 uvicorn==0.32.1
+python-multipart==0.0.17
 websockets==13.1
+httpx==0.27.2
+
+# ── Dashboard ─────────────────────────────────────────────────────────────
+dash==2.18.2
+dash-bootstrap-components==1.6.0
+plotly==5.24.1
+
+# ── Database — Postgres + asyncpg (replaces aiosqlite for production) ─────
+sqlalchemy==2.0.36
+asyncpg==0.30.0
+# Keep aiosqlite for local development fallback
+aiosqlite==0.20.0
+psycopg2-binary==2.9.10
+
+# ── Firebase Auth ──────────────────────────────────────────────────────────
+firebase-admin==6.5.0
+
+# ── Data / ML ─────────────────────────────────────────────────────────────
 pandas==2.2.3
 numpy==2.1.3
 scikit-learn==1.5.2
-plotly==5.24.1
-dash==2.18.2
-dash-bootstrap-components==1.6.0
+faker==30.8.2
+
+# ── Config / utils ────────────────────────────────────────────────────────
+pydantic==2.9.2
+pydantic-settings==2.6.1
 pyyaml==6.0.2
 python-dotenv==1.0.1
-httpx==0.27.2
 jinja2==3.1.4
-fpdf2==2.8.1
-sqlalchemy==2.0.36
-aiosqlite==0.20.0
-python-multipart==0.0.17
-apscheduler==3.10.4
 rich==13.9.4
+apscheduler==3.10.4
+fpdf2==2.8.1
+
+# ── Process supervisor (installed at OS level in Dockerfile, not pip) ──────
+# supervisor is installed via apt, not pip
+
+# ── Redis (kept for local dev but REDIS_ENABLED=false on Koyeb free tier) ─
+redis==5.2.0

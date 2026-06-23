@@ -4,11 +4,13 @@ api/routers/mitre.py
 MITRE ATT&CK endpoints.
 
 Routes:
-    GET /mitre/technique/{technique_id}    — details for a single technique
-    GET /mitre/coverage/{session_id}       — ATT&CK coverage for a session
-    GET /mitre/matrix                       — full enterprise matrix metadata
+    GET /mitre/technique/{technique_id}    — details for a single technique (public reference)
+    GET /mitre/coverage/{session_id}       — ATT&CK coverage for a session you own
+    GET /mitre/matrix                       — full enterprise matrix metadata (public reference)
 
-Reads from the cached enterprise_attack.json (populated by scripts/seed_mitre.py).
+technique/matrix read from the cached enterprise_attack.json — that's public
+ATT&CK reference data, so they're unauthenticated. coverage/{session_id} reads
+a specific session's attack events + alerts, so it requires auth + ownership.
 """
 
 from __future__ import annotations
@@ -22,8 +24,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.deps import get_db
+from api.firebase_auth import get_current_user
+from api.ownership import verify_session_owner
 from api.schemas.streaming import CoverageResponse, TechniqueResponse
 from db import crud
+from db.models import User
 
 router = APIRouter()
 
@@ -48,7 +53,7 @@ def _load_mitre() -> dict[str, Any]:
 
 
 # ════════════════════════════════════════════════════════════════════════════
-# Single technique lookup
+# Single technique lookup  (public reference data)
 # ════════════════════════════════════════════════════════════════════════════
 @router.get("/technique/{technique_id}", response_model=TechniqueResponse)
 async def get_technique(technique_id: str):
@@ -65,7 +70,7 @@ async def get_technique(technique_id: str):
 
 
 # ════════════════════════════════════════════════════════════════════════════
-# Matrix metadata
+# Matrix metadata  (public reference data)
 # ════════════════════════════════════════════════════════════════════════════
 @router.get("/matrix")
 async def get_matrix_info():
@@ -79,10 +84,14 @@ async def get_matrix_info():
 
 
 # ════════════════════════════════════════════════════════════════════════════
-# Session coverage
+# Session coverage  (per-session data — auth + ownership required)
 # ════════════════════════════════════════════════════════════════════════════
 @router.get("/coverage/{session_id}", response_model=CoverageResponse)
-async def get_session_coverage(session_id: str, db: AsyncSession = Depends(get_db)):
+async def get_session_coverage(
+    session_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
     """
     Compute ATT&CK coverage for a session.
 
@@ -90,6 +99,8 @@ async def get_session_coverage(session_id: str, db: AsyncSession = Depends(get_d
     "Detected" = techniques that produced at least one true-positive alert
     "Missed"   = used but never detected (the SOC's blind spots)
     """
+    await verify_session_owner(db, session_id, current_user)
+
     # Get attack events to find techniques that were used
     attack_events = await crud.get_attack_events(db, session_id)
     used = {ev.technique_id for ev in attack_events if ev.technique_id}

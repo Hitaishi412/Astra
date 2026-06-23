@@ -50,6 +50,9 @@ class User(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     username: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
     display_name: Mapped[Optional[str]] = mapped_column(String(128))
+    # Firebase Auth integration
+    firebase_uid: Mapped[Optional[str]] = mapped_column(String(128), unique=True, nullable=True)
+    email: Mapped[Optional[str]] = mapped_column(String(256), unique=True, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
     # Relationships
