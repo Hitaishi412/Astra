@@ -41,3 +41,4 @@ fpdf2==2.8.1
 
 # ── Redis (kept for local dev but REDIS_ENABLED=false on Koyeb free tier) ─
 redis==5.2.0
+slowapi==0.1.9

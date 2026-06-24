@@ -79,6 +79,10 @@ def create_app() -> FastAPI:
     from security_headers import apply_to_fastapi
     apply_to_fastapi(app)
 
+    # Rate limiting (Redis-backed, global; see api/rate_limit.py)
+    from api.rate_limit import init_rate_limiter
+    init_rate_limiter(app)
+
     # Register routers
     _register_routers(app)
 
