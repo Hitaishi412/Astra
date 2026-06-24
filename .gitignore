@@ -22,3 +22,7 @@ apply_attacks_patch.py
 *.sqlite-journal
 apply_pentester_dashboard.py
 secrets/
+
+# local patch backups + one-off runners
+*.bak_*
+fix_*.py
