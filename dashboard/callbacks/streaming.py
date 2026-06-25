@@ -519,6 +519,42 @@ def register(app):
         return msg or ""
 
     # ── End & Write Report → navigate to report writer ───────────────────
+    # ── Scenario-aware difficulty options ───────────────────────────────
+    # Some scenarios only support a subset of difficulties (the API's
+    # per-scenario difficulty_range). Rebuild the difficulty dropdown when the
+    # scenario changes so invalid combos (e.g. "Easy" on an APT) are never
+    # offered, which would otherwise 400 at session creation.
+    @app.callback(
+        Output("launcher-difficulty", "options"),
+        Output("launcher-difficulty", "value"),
+        Input("launcher-scenario", "value"),
+        State("api-base", "data"),
+        State("auth-token", "data"),
+        prevent_initial_call=True,
+    )
+    def update_difficulty_options(scenario_id, api_base, token):
+        _labels = {
+            "beginner": "Beginner — clear signals, lots of logs",
+            "easy":     "Easy — clear signals, lots of logs",
+            "medium":   "Medium — realistic noise/signal mix",
+            "hard":     "Hard — quiet attacker, heavy noise",
+            "expert":   "Expert — highly evasive, minimal signal",
+        }
+        diffs = ["beginner", "medium", "hard", "expert"]
+        if scenario_id:
+            try:
+                with httpx.Client(timeout=10.0, headers=auth_headers(token)) as client:
+                    r = client.get(f"{api_base}/scenarios/{scenario_id}")
+                    if r.status_code == 200:
+                        rng = r.json().get("difficulty_range") or []
+                        if rng:
+                            diffs = rng
+            except Exception as e:
+                logger.debug(f"[difficulty] fetch failed for {scenario_id}: {e}")
+        options = [{"label": _labels.get(d, d.title()), "value": d} for d in diffs]
+        value = diffs[0] if diffs else "medium"
+        return options, value
+
     @app.callback(
         Output("url", "pathname", allow_duplicate=True),
         Input("end-and-report-button", "n_clicks"),
