@@ -382,11 +382,15 @@ def register(app):
         State("api-base", "data"),
         State("auth-token", "data"),
         State("active-mode", "data"),
+        prevent_initial_call=True,
     )
     def render_donut_and_sparkline(stats, api_base, token, mode):
         from dashboard.components.charts import coverage_donut, score_sparkline, empty_chart
+        # No live session yet -> the sparkline/donut components may not be mounted
+        # (user still on the launcher). Writing to an unmounted output throws
+        # "nonexistent object", which surfaces as a 403. Skip the update instead.
         if not stats:
-            return empty_chart("0%", height=140), empty_chart("", height=60)
+            return no_update, no_update
         coverage_pct = float(stats.get("coverage_pct", 0))
         score_full = stats.get("score_full") or {}
         mitre = score_full.get("details", {}).get("mitre", {})
