@@ -22,6 +22,7 @@ Auth note:
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import threading
@@ -37,6 +38,14 @@ from api.firebase_auth import get_current_user
 from db import crud
 from db.models import User
 from core.attack_engine.orchestrator import AttackOrchestrator
+from core.session_driver import (
+    SessionDriver,
+    register_driver,
+    register_task,
+    get_driver,
+    get_task,
+    drop_driver,
+)
 
 logger = logging.getLogger("astra.api.attacks")
 router = APIRouter()
@@ -215,7 +224,7 @@ async def next_step(
     }
 
 
-@router.post("/run/{scenario_id}")
+@router.post("/run/{scenario_id}", status_code=202)
 async def run_scenario_stream(
     scenario_id:   str,
     session_id:    str,
@@ -226,48 +235,34 @@ async def run_scenario_stream(
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Stream a full scenario as newline-delimited JSON (NDJSON).
-    Each line is one AttackStep JSON object.
-    Use this to feed the WebSocket / dashboard live attack feed.
+    Launch a full scenario as a background task.
 
-    Client reads: response.body line-by-line, parse each as JSON.
+    The SessionDriver runs the attack and PUBLISHES logs/alerts/score/status
+    to the streaming backend (Redis) as it progresses; the dashboard's
+    subscriber receives those events and updates the live feed. Returns 202
+    immediately the client does NOT consume an HTTP stream; the live data
+    arrives out-of-band via the streaming backend.
     """
     await _verify_session_owner(db, session_id, current_user)
-
     await crud.update_session_status(db, session_id, "running")
 
     orch = _get_orchestrator(session_id)
 
-    async def _generate():
+    async def _drive():
         try:
-            async for step in orch.run_scenario_async(
+            await driver.run(
                 scenario_id=scenario_id,
                 difficulty=difficulty,
                 target_ip=target_ip,
                 step_delay_ms=step_delay_ms,
-            ):
-                data = {
-                    "step_number":    step.step_number,
-                    "phase":          step.phase,
-                    "technique_id":   step.technique_id,
-                    "technique_name": step.technique_name,
-                    "tactic":         step.tactic,
-                    "description":    step.description,
-                    "source_host":    step.source_host,
-                    "target_host":    str(step.target_host) if step.target_host else None,
-                    "success":        step.success,
-                    "severity":       step.severity,
-                    "timestamp":      step.timestamp.isoformat(),
-                    "extra_data":     step.extra_data,
-                }
-                yield json.dumps(data) + "\n"
+            )
+        except Exception:
+            logger.exception(f"[attacks/run] driver crashed for session={session_id}")
 
-            # Final summary line
-            yield json.dumps({"done": True, "message": "Scenario complete"}) + "\n"
-        finally:
-            _drop_orchestrator(session_id)
+    task = asyncio.create_task(_drive())
+    register_task(session_id, task)
 
-    return StreamingResponse(_generate(), media_type="application/x-ndjson")
+    return {"status": "started", "session_id": session_id, "scenario_id": scenario_id}
 
 
 @router.get("/status")
@@ -301,6 +296,15 @@ async def abort_scenario(
     """Abort the running scenario for a session and mark it aborted."""
     await _verify_session_owner(db, body.session_id, current_user)
 
+    # New path: a background SessionDriver is running this session.
+    driver = get_driver(body.session_id)
+    if driver is not None:
+        driver.abort()
+        task = get_task(body.session_id)
+        if task is not None:
+            task.cancel()
+        drop_driver(body.session_id)
+    # Legacy/manual path: a bare orchestrator started via /load + /next.
     orch = _orchestrators.get(body.session_id)
     if orch is not None:
         orch.abort()

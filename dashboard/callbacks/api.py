@@ -137,14 +137,24 @@ def register(app):
     def populate_matrix_session_picker(pathname, api_base, token):
         if not pathname or not pathname.startswith("/matrix"):
             return no_update
+        # Source from /sessions (scoped to the current user) — NOT the global
+        # leaderboard, which lists every user's sessions and 404s on coverage
+        # for sessions you don't own.
         data = _safe_get(
-            f"{api_base}/scoring/leaderboard?limit=50",
+            f"{api_base}/sessions?limit=50",
             headers=auth_headers(token),
         ) or []
+        # Newest first; only sessions that actually ran are worth charting.
+        data = sorted(
+            data,
+            key=lambda s: s.get("created_at", ""),
+            reverse=True,
+        )
         return [
-            {"label": f"{e.get('session_id','')[:12]} — {e.get('scenario_id','?')} ({e.get('total_score',0):.0f})",
-             "value": e.get("session_id", "")}
-            for e in data
+            {"label": f"{s.get('id','')[:8]} — {s.get('scenario_id','?')} ({s.get('status','?')})",
+             "value": s.get("id", "")}
+            for s in data
+            if s.get("id")
         ]
 
     @app.callback(

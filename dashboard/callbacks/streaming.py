@@ -338,28 +338,36 @@ def register(app):
         Output("stat-coverage", "children"),
         Output("stat-score", "children"),
         Output("kill-chain-strip", "children"),
-        Output("score-number", "children"),
-        Output("score-grade", "children"),
-        Output("score-grade", "className"),
-        Output("score-subscores", "children"),
         Input("live-stats-store", "data"),
     )
     def render_stats(stats):
         if not stats:
-            return ("0", "0", "0%", "0", no_update, "0", "—", "score-grade", [])
-
+            return ("0", "0", "0%", "0", no_update)
         kc = render_kill_chain(stats.get("current_phase", -1), stats.get("completed_phases", []))
-
-        score_full = stats.get("score_full") or {}
-        grade = score_full.get("grade", "—")
         score_val = stats.get("score", 0)
-
         return (
             str(stats.get("logs_count", 0)),
             str(stats.get("alerts_count", 0)),
             f"{stats.get('coverage_pct', 0):.0f}%",
             f"{score_val:.0f}",
             kc,
+        )
+
+    # ── Score panel: separate callback so a late mount can't abort the feed ─
+    @app.callback(
+        Output("score-number", "children"),
+        Output("score-grade", "children"),
+        Output("score-grade", "className"),
+        Output("score-subscores", "children"),
+        Input("live-stats-store", "data"),
+    )
+    def render_score_panel(stats):
+        if not stats:
+            return ("0", "—", "score-grade", [])
+        score_full = stats.get("score_full") or {}
+        grade = score_full.get("grade", "—")
+        score_val = stats.get("score", 0)
+        return (
             f"{score_val:.0f}",
             grade.upper().replace("_", " "),
             f"score-grade {grade.lower()}",
@@ -374,11 +382,15 @@ def register(app):
         State("api-base", "data"),
         State("auth-token", "data"),
         State("active-mode", "data"),
+        prevent_initial_call=True,
     )
     def render_donut_and_sparkline(stats, api_base, token, mode):
         from dashboard.components.charts import coverage_donut, score_sparkline, empty_chart
+        # No live session yet -> the sparkline/donut components may not be mounted
+        # (user still on the launcher). Writing to an unmounted output throws
+        # "nonexistent object", which surfaces as a 403. Skip the update instead.
         if not stats:
-            return empty_chart("0%", height=140), empty_chart("", height=60)
+            return no_update, no_update
         coverage_pct = float(stats.get("coverage_pct", 0))
         score_full = stats.get("score_full") or {}
         mitre = score_full.get("details", {}).get("mitre", {})
@@ -511,6 +523,42 @@ def register(app):
         return msg or ""
 
     # ── End & Write Report → navigate to report writer ───────────────────
+    # ── Scenario-aware difficulty options ───────────────────────────────
+    # Some scenarios only support a subset of difficulties (the API's
+    # per-scenario difficulty_range). Rebuild the difficulty dropdown when the
+    # scenario changes so invalid combos (e.g. "Easy" on an APT) are never
+    # offered, which would otherwise 400 at session creation.
+    @app.callback(
+        Output("launcher-difficulty", "options"),
+        Output("launcher-difficulty", "value"),
+        Input("launcher-scenario", "value"),
+        State("api-base", "data"),
+        State("auth-token", "data"),
+        prevent_initial_call=True,
+    )
+    def update_difficulty_options(scenario_id, api_base, token):
+        _labels = {
+            "beginner": "Beginner — clear signals, lots of logs",
+            "easy":     "Easy — clear signals, lots of logs",
+            "medium":   "Medium — realistic noise/signal mix",
+            "hard":     "Hard — quiet attacker, heavy noise",
+            "expert":   "Expert — highly evasive, minimal signal",
+        }
+        diffs = ["beginner", "medium", "hard", "expert"]
+        if scenario_id:
+            try:
+                with httpx.Client(timeout=10.0, headers=auth_headers(token)) as client:
+                    r = client.get(f"{api_base}/scenarios/{scenario_id}")
+                    if r.status_code == 200:
+                        rng = r.json().get("difficulty_range") or []
+                        if rng:
+                            diffs = rng
+            except Exception as e:
+                logger.debug(f"[difficulty] fetch failed for {scenario_id}: {e}")
+        options = [{"label": _labels.get(d, d.title()), "value": d} for d in diffs]
+        value = diffs[0] if diffs else "medium"
+        return options, value
+
     @app.callback(
         Output("url", "pathname", allow_duplicate=True),
         Input("end-and-report-button", "n_clicks"),

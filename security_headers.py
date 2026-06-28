@@ -31,7 +31,7 @@ from __future__ import annotations
 # Safe to enforce everywhere -- these do not alter how the app works.
 COMMON_HEADERS: dict[str, str] = {
     "X-Content-Type-Options": "nosniff",
-    "X-Frame-Options": "DENY",                       # clickjacking (legacy)
+    "X-Frame-Options": "SAMEORIGIN",                       # clickjacking (legacy)
     "Referrer-Policy": "strict-origin-when-cross-origin",
     "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
     "Permissions-Policy": "geolocation=(), microphone=(), camera=()",
@@ -52,7 +52,7 @@ DASHBOARD_CSP = "; ".join([
     "connect-src 'self' "
         "https://*.googleapis.com https://*.firebaseio.com "
         "https://identitytoolkit.googleapis.com https://securetoken.googleapis.com",
-    "frame-ancestors 'none'",
+    "frame-ancestors 'self'",
     "base-uri 'self'",
     "form-action 'self'",
 ])

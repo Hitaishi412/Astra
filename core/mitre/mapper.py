@@ -146,7 +146,13 @@ class MitreMapper:
             # Parent-technique alert (e.g. T1059) — match any subtechnique
             prefix = tid + "."
             matched_tids = [t for t in self._techniques if t.startswith(prefix)]
-
+        else:
+            # Sub-technique alert (e.g. T1059.001) whose parent (T1059) was the
+            # recorded technique -> credit the parent. Mirrors real ATT&CK
+            # coverage, which treats the technique hierarchy in BOTH directions.
+            parent = tid.split(".")[0]
+            if parent in self._techniques:
+                matched_tids.append(parent)
         if not matched_tids:
             return
 
